@@ -123,12 +123,20 @@ public class BlockGZIPFileWriter {
         return chunks.get(chunks.size() - 1);
     }
 
+    public String getDataFileName() {
+        return String.format("%s-%012d.gz", filenameBase, firstRecordOffset);
+    }
+
+    public String getIndexFileName() {
+        return String.format("%s-%012d.index.json", filenameBase, firstRecordOffset);
+    }
+
     public String getDataFilePath() {
-        return String.format("%s/%s-%012d.gz", path, filenameBase, firstRecordOffset);
+        return String.format("%s/%s", path, this.getDataFileName());
     }
 
     public String getIndexFilePath() {
-        return String.format("%s/%s-%012d.index.json", path, filenameBase, firstRecordOffset);
+        return String.format("%s/%s", path, this.getIndexFileName());
     }
 
     /**
