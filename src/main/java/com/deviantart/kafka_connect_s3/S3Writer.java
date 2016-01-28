@@ -1,8 +1,5 @@
 package com.deviantart.kafka_connect_s3;
 
-import java.io.BufferedReader;
-import java.lang.StringBuilder;
-import java.io.InputStreamReader;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
@@ -27,16 +24,19 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Date;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.File;
+import java.io.InputStreamReader;
 import java.io.IOException;
+import java.lang.StringBuilder;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 
 /**

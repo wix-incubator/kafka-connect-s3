@@ -1,12 +1,5 @@
 package com.deviantart.kafka_connect_s3;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.lang.StringBuilder;
-import java.io.InputStream;
-import java.util.Date;
-import java.text.SimpleDateFormat;
 import static org.mockito.Mockito.*;
 import org.mockito.ArgumentCaptor;
 
@@ -32,9 +25,16 @@ import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
 
-import java.util.List;
-import java.util.ArrayList;
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.IOException;
+import java.lang.StringBuilder;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 
 /**
  * Really basic sanity check testing over the documented use of API.

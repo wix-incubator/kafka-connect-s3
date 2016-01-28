@@ -36,202 +36,202 @@ import org.json.simple.JSONObject;
  * with any regular GZIP decoding library or program.
  */
 public class BlockGZIPFileWriter {
-    private String filenameBase;
-    private String path;
-    private GZIPOutputStream gzipStream;
-    private BufferedWriter writer;
-    private CountingOutputStream fileStream;
+  private String filenameBase;
+  private String path;
+  private GZIPOutputStream gzipStream;
+  private BufferedWriter writer;
+  private CountingOutputStream fileStream;
 
-    private class Chunk {
-        public long rawBytes = 0;
-        public long byteOffset = 0;
-        public long compressedByteLength = 0;
-        public long firstOffset = 0;
-        public long numRecords = 0;
-    };
+  private class Chunk {
+    public long rawBytes = 0;
+    public long byteOffset = 0;
+    public long compressedByteLength = 0;
+    public long firstOffset = 0;
+    public long numRecords = 0;
+  };
 
-    private class CountingOutputStream extends FilterOutputStream {
-        private long numBytes = 0;
+  private class CountingOutputStream extends FilterOutputStream {
+    private long numBytes = 0;
 
-        CountingOutputStream(OutputStream out) throws IOException {
-            super(out);
-        }
+    CountingOutputStream(OutputStream out) throws IOException {
+      super(out);
+    }
 
-        @Override
-        public void write(int b) throws IOException {
-            out.write(b);
-            numBytes++;
-        }
-        @Override
-        public void write(byte[] b) throws IOException {
-            out.write(b);
-            numBytes += b.length;
-        }
-        @Override
-        public void write(byte[] b, int off, int len) throws IOException {
-            out.write(b, off, len);
-            numBytes += len;
-        }
+    @Override
+    public void write(int b) throws IOException {
+      out.write(b);
+      numBytes++;
+    }
+    @Override
+    public void write(byte[] b) throws IOException {
+      out.write(b);
+      numBytes += b.length;
+    }
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+      out.write(b, off, len);
+      numBytes += len;
+    }
 
-        public long getNumBytesWritten() {
-            return numBytes;
-        }
-    };
+    public long getNumBytesWritten() {
+      return numBytes;
+    }
+  };
 
-    private ArrayList<Chunk> chunks;
+  private ArrayList<Chunk> chunks;
 
     // Default each chunk is 64MB of uncompressed data
-    private long chunkThreshold;
+  private long chunkThreshold;
 
     // Offset to the first record.
     // Set to non-zero if this file is part of a larger stream and you want
     // record offsets in the index to reflect the global offset rather than local
-    private long firstRecordOffset;
+  private long firstRecordOffset;
 
-    public BlockGZIPFileWriter(String filenameBase, String path) throws FileNotFoundException, IOException {
-        this(filenameBase, path, 0, 67108864);
-    }
+  public BlockGZIPFileWriter(String filenameBase, String path) throws FileNotFoundException, IOException {
+    this(filenameBase, path, 0, 67108864);
+  }
 
-    public BlockGZIPFileWriter(String filenameBase, String path, long firstRecordOffset) throws FileNotFoundException, IOException {
-        this(filenameBase, path, firstRecordOffset, 67108864);
-    }
+  public BlockGZIPFileWriter(String filenameBase, String path, long firstRecordOffset) throws FileNotFoundException, IOException {
+    this(filenameBase, path, firstRecordOffset, 67108864);
+  }
 
-    public BlockGZIPFileWriter(String filenameBase, String path, long firstRecordOffset, long chunkThreshold)
-        throws FileNotFoundException, IOException
-    {
-        this.filenameBase = filenameBase;
-        this.path = path;
-        this.firstRecordOffset = firstRecordOffset;
-        this.chunkThreshold = chunkThreshold;
+  public BlockGZIPFileWriter(String filenameBase, String path, long firstRecordOffset, long chunkThreshold)
+  throws FileNotFoundException, IOException
+  {
+    this.filenameBase = filenameBase;
+    this.path = path;
+    this.firstRecordOffset = firstRecordOffset;
+    this.chunkThreshold = chunkThreshold;
 
-        chunks = new ArrayList<Chunk>();
+    chunks = new ArrayList<Chunk>();
 
         // Initialize first chunk
-        chunks.add(new Chunk());
+    chunks.add(new Chunk());
 
         // Open file for writing and setup
-        this.fileStream = new CountingOutputStream(new FileOutputStream(new File(getDataFilePath())));
-        initChunkWriter();
+    this.fileStream = new CountingOutputStream(new FileOutputStream(new File(getDataFilePath())));
+    initChunkWriter();
+  }
+
+  private void initChunkWriter() throws IOException, UnsupportedEncodingException {
+    gzipStream = new GZIPOutputStream(fileStream);
+    writer = new BufferedWriter(new OutputStreamWriter(gzipStream, "UTF-8"));
+  }
+
+  private Chunk currentChunk() {
+    return chunks.get(chunks.size() - 1);
+  }
+
+  public String getDataFileName() {
+    return String.format("%s-%012d.gz", filenameBase, firstRecordOffset);
+  }
+
+  public String getIndexFileName() {
+    return String.format("%s-%012d.index.json", filenameBase, firstRecordOffset);
+  }
+
+  public String getDataFilePath() {
+    return String.format("%s/%s", path, this.getDataFileName());
+  }
+
+  public String getIndexFilePath() {
+    return String.format("%s/%s", path, this.getIndexFileName());
+  }
+
+  /**
+   * Writes string to file, assuming this is a single record
+   *
+   * If there is no newline at then end we will add one
+   */
+  public void write(String record) throws IOException {
+    Chunk ch = currentChunk();
+
+    boolean hasNewLine = record.endsWith("\n");
+
+    int rawBytesToWrite = record.length();
+    if (!hasNewLine) {
+      rawBytesToWrite += 1;
     }
 
-    private void initChunkWriter() throws IOException, UnsupportedEncodingException {
-        gzipStream = new GZIPOutputStream(fileStream);
-        writer = new BufferedWriter(new OutputStreamWriter(gzipStream, "UTF-8"));
+    if ((ch.rawBytes + rawBytesToWrite) > chunkThreshold) {
+      finishChunk();
+      initChunkWriter();
+
+      Chunk newCh = new Chunk();
+      newCh.firstOffset = ch.firstOffset + ch.numRecords;
+      newCh.byteOffset = ch.byteOffset + ch.compressedByteLength;
+      chunks.add(newCh);
+      ch = newCh;
     }
 
-    private Chunk currentChunk() {
-        return chunks.get(chunks.size() - 1);
+    writer.append(record);
+    if (!hasNewLine) {
+      writer.newLine();
+    }
+    ch.rawBytes += rawBytesToWrite;
+    ch.numRecords++;
+  }
+
+  private void finishChunk() throws IOException {
+    Chunk ch = currentChunk();
+
+      // Complete GZIP block without closing stream
+    writer.flush();
+    gzipStream.finish();
+
+      // We can no find out how long this chunk was compressed
+    long bytesWritten = fileStream.getNumBytesWritten();
+    ch.compressedByteLength = bytesWritten - ch.byteOffset;
+  }
+
+  public void close() throws IOException {
+      // Flush last chunk, updating index
+    finishChunk();
+      // Now close the writer (and the whole stream stack)
+    writer.close();
+    writeIndex();
+  }
+
+  private void writeIndex() throws IOException {
+    JSONArray chunkArr = new JSONArray();
+
+    for (Chunk ch : chunks) {
+      JSONObject chunkObj = new JSONObject();
+      chunkObj.put("first_record_offset", ch.firstOffset);
+      chunkObj.put("num_records", ch.numRecords);
+      chunkObj.put("byte_offset", ch.byteOffset);
+      chunkObj.put("byte_length", ch.compressedByteLength);
+      chunkObj.put("byte_length_uncompressed", ch.rawBytes);
+      chunkArr.add(chunkObj);
     }
 
-    public String getDataFileName() {
-        return String.format("%s-%012d.gz", filenameBase, firstRecordOffset);
+    JSONObject index = new JSONObject();
+    index.put("chunks", chunkArr);
+
+    try (FileWriter file = new FileWriter(getIndexFilePath())) {
+      file.write(index.toJSONString());
+      file.close();
     }
+  }
 
-    public String getIndexFileName() {
-        return String.format("%s-%012d.index.json", filenameBase, firstRecordOffset);
+  public int getTotalUncompressedSize() {
+    int totalBytes = 0;
+    for (Chunk ch : chunks) {
+      totalBytes += ch.rawBytes;
     }
+    return totalBytes;
+  }
 
-    public String getDataFilePath() {
-        return String.format("%s/%s", path, this.getDataFileName());
+  public int getNumChunks() {
+    return chunks.size();
+  }
+
+  public int getNumRecords() {
+    int totalRecords = 0;
+    for (Chunk ch : chunks) {
+      totalRecords += ch.numRecords;
     }
-
-    public String getIndexFilePath() {
-        return String.format("%s/%s", path, this.getIndexFileName());
-    }
-
-    /**
-     * Writes string to file, assuming this is a single record
-     *
-     * If there is no newline at then end we will add one
-     */
-    public void write(String record) throws IOException {
-        Chunk ch = currentChunk();
-
-        boolean hasNewLine = record.endsWith("\n");
-
-        int rawBytesToWrite = record.length();
-        if (!hasNewLine) {
-            rawBytesToWrite += 1;
-        }
-
-        if ((ch.rawBytes + rawBytesToWrite) > chunkThreshold) {
-            finishChunk();
-            initChunkWriter();
-
-            Chunk newCh = new Chunk();
-            newCh.firstOffset = ch.firstOffset + ch.numRecords;
-            newCh.byteOffset = ch.byteOffset + ch.compressedByteLength;
-            chunks.add(newCh);
-            ch = newCh;
-        }
-
-        writer.append(record);
-        if (!hasNewLine) {
-            writer.newLine();
-        }
-        ch.rawBytes += rawBytesToWrite;
-        ch.numRecords++;
-    }
-
-    private void finishChunk() throws IOException {
-        Chunk ch = currentChunk();
-
-        // Complete GZIP block without closing stream
-        writer.flush();
-        gzipStream.finish();
-
-        // We can no find out how long this chunk was compressed
-        long bytesWritten = fileStream.getNumBytesWritten();
-        ch.compressedByteLength = bytesWritten - ch.byteOffset;
-    }
-
-    public void close() throws IOException {
-        // Flush last chunk, updating index
-        finishChunk();
-        // Now close the writer (and the whole stream stack)
-        writer.close();
-        writeIndex();
-    }
-
-    private void writeIndex() throws IOException {
-        JSONArray chunkArr = new JSONArray();
-
-        for (Chunk ch : chunks) {
-            JSONObject chunkObj = new JSONObject();
-            chunkObj.put("first_record_offset", ch.firstOffset);
-            chunkObj.put("num_records", ch.numRecords);
-            chunkObj.put("byte_offset", ch.byteOffset);
-            chunkObj.put("byte_length", ch.compressedByteLength);
-            chunkObj.put("byte_length_uncompressed", ch.rawBytes);
-            chunkArr.add(chunkObj);
-        }
-
-        JSONObject index = new JSONObject();
-        index.put("chunks", chunkArr);
-
-        try (FileWriter file = new FileWriter(getIndexFilePath())) {
-            file.write(index.toJSONString());
-            file.close();
-        }
-    }
-
-    public int getTotalUncompressedSize() {
-        int totalBytes = 0;
-        for (Chunk ch : chunks) {
-            totalBytes += ch.rawBytes;
-        }
-        return totalBytes;
-    }
-
-    public int getNumChunks() {
-        return chunks.size();
-    }
-
-    public int getNumRecords() {
-        int totalRecords = 0;
-        for (Chunk ch : chunks) {
-            totalRecords += ch.numRecords;
-        }
-        return totalRecords;
-    }
+    return totalRecords;
+  }
 }
