@@ -59,23 +59,23 @@ public class BlockGZIPFileWriterTest extends TestCase {
   }
 
   public void testWrite() throws Exception {
-      // Very compressible 200 byte padding string to prepend to our unique line prefix
+    // Very compressible 200 byte padding string to prepend to our unique line prefix
     String pad = "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
     + "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
-      // Make a writer with artificially small chunk threshold of 1kb
+    // Make a writer with artificially small chunk threshold of 1kb
     BlockGZIPFileWriter w = new BlockGZIPFileWriter("write-test", tmpDir, 0, 1000);
 
     int totalUncompressedBytes = 0;
     String[] expectedLines = new String[50];
-      // 50 records * 200 bytes padding should be at least 10 chunks worth
+    // 50 records * 200 bytes padding should be at least 10 chunks worth
     for (int i = 0; i < 50; i++) {
       String line = String.format("Record %d %s", i, pad);
-          // Plus one for newline
+      // Plus one for newline
       totalUncompressedBytes += line.length() + 1;
-          // Expect to read without newlines...
+      // Expect to read without newlines...
       expectedLines[i] = line;
-          // But add newlines to half the input to verify writer adds them only if needed
+      // But add newlines to half the input to verify writer adds them only if needed
       if (i % 2 == 0) {
         line += "\n";
       }
@@ -163,5 +163,39 @@ public class BlockGZIPFileWriterTest extends TestCase {
     }
 
     assertEquals("All chunks should cover all bytes in the file", totalBytes, file.length());
+  }
+
+   public void testShouldOverwrite() throws Exception {
+    // Make writer and write to it a bit.
+    BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+    for (int i = 0; i < 50; i++) {
+      String line = String.format("Record %d", i);
+      w.write(line);
+    }
+
+    assertEquals(50, w.getNumRecords());
+
+    w.close();
+
+    // Just check it actually write to disk
+    verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
+
+    // Now make a whole new writer for same chunk
+    w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+
+    // Only write a few lines
+    String[] expectedLines = new String[10];
+    for (int i = 0; i < 10; i++) {
+      String line = String.format("Overwrite record %d", i);
+      w.write(line);
+    }
+
+    assertEquals(10, w.getNumRecords());
+
+    w.close();
+
+    // No check output is only the 10 lines we just wrote
+    verifyOutputIsSaneGZIPFile(w.getDataFilePath(), 10);
+    verifyIndexFile(w, 10, );
   }
 }
