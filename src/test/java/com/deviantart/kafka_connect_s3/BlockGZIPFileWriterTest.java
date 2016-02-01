@@ -64,7 +64,7 @@ public class BlockGZIPFileWriterTest extends TestCase {
     + "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
     // Make a writer with artificially small chunk threshold of 1kb
-    BlockGZIPFileWriter w = new BlockGZIPFileWriter("write-test", tmpDir, 0, 1000);
+    BlockGZIPFileWriter w = new BlockGZIPFileWriter("write-test", tmpDir, 987654321, 1000);
 
     int totalUncompressedBytes = 0;
     String[] expectedLines = new String[50];
@@ -89,7 +89,7 @@ public class BlockGZIPFileWriterTest extends TestCase {
     w.close();
 
     verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
-    verifyIndexFile(w, 0, expectedLines);
+    verifyIndexFile(w, 987654321, expectedLines);
   }
 
   private void verifyOutputIsSaneGZIPFile(String filename, String[] expectedRecords) throws Exception {
@@ -165,37 +165,81 @@ public class BlockGZIPFileWriterTest extends TestCase {
     assertEquals("All chunks should cover all bytes in the file", totalBytes, file.length());
   }
 
-   public void testShouldOverwrite() throws Exception {
+  // Hmm this test is actually not very conclusive - on OS X and most linux file systems
+  // it passes anyway due to nature of filesystems. Not sure how to write something more robust
+  // though to validate that we definitiely truncate the files even if we write less data
+  public void testShouldOverwrite() throws Exception {
     // Make writer and write to it a bit.
-    BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
-    for (int i = 0; i < 50; i++) {
-      String line = String.format("Record %d", i);
-      w.write(line);
+    {
+      BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+
+      // Write at least a few 4k blocks to disk so we can be sure that we don't
+      // only overwrite the first block.
+      String[] expectedLines = new String[5000];
+      for (int i = 0; i < 5000; i++) {
+        String line = String.format("Record %d", i);
+        w.write(line);
+        expectedLines[i] = line;
+      }
+
+      assertEquals(5000, w.getNumRecords());
+
+      w.close();
+
+      // Just check it actually write to disk
+      verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
+      verifyIndexFile(w, 0, expectedLines);
+
     }
 
-    assertEquals(50, w.getNumRecords());
+    {
+      // Now make a whole new writer for same chunk
+      BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+
+      // Only write a few lines
+      String[] expectedLines2 = new String[10];
+      for (int i = 0; i < 10; i++) {
+        String line = String.format("Overwrite record %d", i);
+        w.write(line);
+        expectedLines2[i] = line;
+      }
+
+      assertEquals(10, w.getNumRecords());
+
+      w.close();
+
+      // No check output is only the 10 lines we just wrote
+      verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines2);
+      verifyIndexFile(w, 0, expectedLines2);
+    }
+  }
+
+  public void testDelete() throws Exception {
+    // Make writer and write to it a bit.
+    BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+
+    String[] expectedLines = new String[5000];
+    for (int i = 0; i < 5000; i++) {
+      String line = String.format("Record %d", i);
+      w.write(line);
+      expectedLines[i] = line;
+    }
+
+    assertEquals(5000, w.getNumRecords());
 
     w.close();
 
     // Just check it actually write to disk
     verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
+    verifyIndexFile(w, 0, expectedLines);
 
-    // Now make a whole new writer for same chunk
-    w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+    // Now remove it
+    w.delete();
 
-    // Only write a few lines
-    String[] expectedLines = new String[10];
-    for (int i = 0; i < 10; i++) {
-      String line = String.format("Overwrite record %d", i);
-      w.write(line);
-    }
+    File dataF = new File(w.getDataFilePath());
+    File idxF = new File(w.getIndexFilePath());
 
-    assertEquals(10, w.getNumRecords());
-
-    w.close();
-
-    // No check output is only the 10 lines we just wrote
-    verifyOutputIsSaneGZIPFile(w.getDataFilePath(), 10);
-    verifyIndexFile(w, 10, );
+    assertFalse("Data file should not exist after delete", dataF.exists());
+    assertFalse("Index file should not exist after delete", idxF.exists());
   }
 }

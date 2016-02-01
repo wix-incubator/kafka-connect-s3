@@ -80,12 +80,12 @@ public class BlockGZIPFileWriter {
 
   private ArrayList<Chunk> chunks;
 
-    // Default each chunk is 64MB of uncompressed data
+  // Default each chunk is 64MB of uncompressed data
   private long chunkThreshold;
 
-    // Offset to the first record.
-    // Set to non-zero if this file is part of a larger stream and you want
-    // record offsets in the index to reflect the global offset rather than local
+  // Offset to the first record.
+  // Set to non-zero if this file is part of a larger stream and you want
+  // record offsets in the index to reflect the global offset rather than local
   private long firstRecordOffset;
 
   public BlockGZIPFileWriter(String filenameBase, String path) throws FileNotFoundException, IOException {
@@ -106,11 +106,19 @@ public class BlockGZIPFileWriter {
 
     chunks = new ArrayList<Chunk>();
 
-        // Initialize first chunk
-    chunks.add(new Chunk());
+    // Initialize first chunk
+    Chunk ch = new Chunk();
+    ch.firstOffset = firstRecordOffset;
+    chunks.add(ch);
 
-        // Open file for writing and setup
-    this.fileStream = new CountingOutputStream(new FileOutputStream(new File(getDataFilePath())));
+    // Explicitly truncate the file. On linux and OS X this appears to happen
+    // anyway when opening with FileOutputStream but that behavior is not actually documented
+    // or specified anywhere so let's be rigorous about it.
+    FileOutputStream fos = new FileOutputStream(new File(getDataFilePath()));
+    fos.getChannel().truncate(0);
+
+    // Open file for writing and setup
+    this.fileStream = new CountingOutputStream(fos);
     initChunkWriter();
   }
 
@@ -173,22 +181,34 @@ public class BlockGZIPFileWriter {
     ch.numRecords++;
   }
 
+  public void delete() throws IOException {
+    deleteIfExists(getDataFilePath());
+    deleteIfExists(getIndexFilePath());
+  }
+
+  private void deleteIfExists(String path) throws IOException {
+    File f = new File(path);
+    if (f.exists() && !f.isDirectory()) {
+      f.delete();
+    }
+  }
+
   private void finishChunk() throws IOException {
     Chunk ch = currentChunk();
 
-      // Complete GZIP block without closing stream
+    // Complete GZIP block without closing stream
     writer.flush();
     gzipStream.finish();
 
-      // We can no find out how long this chunk was compressed
+    // We can no find out how long this chunk was compressed
     long bytesWritten = fileStream.getNumBytesWritten();
     ch.compressedByteLength = bytesWritten - ch.byteOffset;
   }
 
   public void close() throws IOException {
-      // Flush last chunk, updating index
+    // Flush last chunk, updating index
     finishChunk();
-      // Now close the writer (and the whole stream stack)
+    // Now close the writer (and the whole stream stack)
     writer.close();
     writeIndex();
   }

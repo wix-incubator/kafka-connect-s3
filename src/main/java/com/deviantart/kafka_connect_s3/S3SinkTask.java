@@ -7,6 +7,8 @@ import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -19,11 +21,15 @@ import java.util.Set;
 
 public class S3SinkTask extends SinkTask {
 
+  private static final Logger log = LoggerFactory.getLogger(S3SinkTask.class);
+
   private Map<String, String> config;
 
   private Map<TopicPartition, BlockGZIPFileWriter> tmpFiles;
 
-  long GZIPChunkThreshold = 67108864;
+  private long GZIPChunkThreshold = 67108864;
+
+  private S3Writer s3;
 
   public S3SinkTask() {
     tmpFiles = new HashMap<>();
@@ -35,7 +41,7 @@ public class S3SinkTask extends SinkTask {
   }
 
   @Override
-  public void start(Map<String, String> props) {
+  public void start(Map<String, String> props) throws ConnectException {
     config = props;
     String chunkThreshold = config.get("compressed_block_size");
     if (chunkThreshold == null) {
@@ -45,13 +51,26 @@ public class S3SinkTask extends SinkTask {
         // keep default
       }
     }
+    String bucket = config.get("s3.bucket");
+    String prefix = config.get("s3.prefix");
+    if (bucket == null || bucket == "") {
+      throw new ConnectException("S3 bucket must be configured");
+    }
+    if (prefix == null || prefix == "") {
+      prefix = "/";
+    }
+    s3 = new S3Writer(bucket, prefix);
+
+    // Recover initial assignments
+    Set<TopicPartition> assignment = context.assignment();
+    recoverAssignment(assignment);
   }
 
   @Override
   public void stop() throws ConnectException {
-    // TODO should we just flush and close current buffer files
-    // to resume when we start again, or should we just ignore and nuke them on startup
-    // and resume from last block stored in S3?
+    // TODO we could try to be smart and flush buffer files to be resumed
+    // but for now we just start again from where we got to in S3 and overwrite any
+    // buffers on disk.
   }
 
   @Override
@@ -63,6 +82,7 @@ public class S3SinkTask extends SinkTask {
         TopicPartition tp = new TopicPartition(topic, partition);
         BlockGZIPFileWriter buffer = tmpFiles.get(tp);
         if (buffer == null) {
+          log.error("Trying to put {} records to partition {} which doesn't exist yet", records.size(), tp);
           throw new ConnectException("Trying to put records for a topic partition that has not be assigned");
         }
         buffer.write(record.value().toString());
@@ -79,18 +99,21 @@ public class S3SinkTask extends SinkTask {
       if (writer == null) {
         throw new ConnectException("Trying to flush records for a topic partition that has not be assigned");
       }
+      if (writer.getNumRecords() == 0) {
+        // Not done anything yet
+        log.info("No new records for partition {}", tp);
+        continue;
+      }
       try {
         writer.close();
-        //this.uploadWriterFiles(writer);
+
+        long nextOffset = s3.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), tp);
 
         OffsetAndMetadata om = offsets.get(tp);
 
-        // Also update the cursor file for partition so that we don't have expensive search to figure out
-        // where we got to later.
-        //this.updateCursorFile(tp, writer);*/
-
         // Now reset writer to a new one
         tmpFiles.put(tp, this.createNextBlockWriter(tp, om.offset()));
+        log.info("Successfully uploaded chunk for {} now at offset {}", tp, om.offset());
       } catch (FileNotFoundException fnf) {
         throw new ConnectException("Failed to find local dir for temp files", fnf);
       } catch (IOException e) {
@@ -99,24 +122,63 @@ public class S3SinkTask extends SinkTask {
     }
   }
 
-  private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws IOException {
+  private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
     String name = String.format("%s-%05d", tp.topic(), tp.partition());
-    String path = config.get("tmp_path");
+    String path = config.get("local.buffer.dir");
+    if (path == null) {
+      throw new ConnectException("No local buffer file path configured");
+    }
     return new BlockGZIPFileWriter(name, path, nextOffset, this.GZIPChunkThreshold);
   }
 
   @Override
-  public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-    // TODO lookup in S3 what offset was for last good block and initialize buffer
-    // and this.context.offsets() with the correct location.
-    // This might be unsafe with a US Standard S3 region but ignore for now?
-    // Perhaps need to wipe any partial local file?
+  public void onPartitionsAssigned(Collection<TopicPartition> partitions) throws ConnectException {
+    recoverAssignment(partitions);
   }
 
   @Override
-  public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-    // Stop updating and wipe local buffer file
-    // Probably need to inform this.context.offsets() about the last offsets actually
-    // committed...
+  public void onPartitionsRevoked(Collection<TopicPartition> partitions) throws ConnectException {
+    for (TopicPartition tp : partitions) {
+      // See if this is a new assignment
+      BlockGZIPFileWriter writer = this.tmpFiles.remove(tp);
+      if (writer != null) {
+        log.info("Revoked partition {} deleting buffer", tp);
+        try {
+          writer.close();
+          writer.delete();
+        } catch (IOException ioe) {
+          throw new ConnectException("Failed to resume TopicPartition form S3", ioe);
+        }
+      }
+    }
+  }
+
+  private void recoverAssignment(Collection<TopicPartition> partitions) throws ConnectException {
+    for (TopicPartition tp : partitions) {
+      // See if this is a new assignment
+      if (this.tmpFiles.get(tp) == null) {
+        log.info("Assigned new partition {} creating buffer writer", tp);
+        try {
+          recoverPartition(tp);
+        } catch (IOException ioe) {
+          throw new ConnectException("Failed to resume TopicPartition from S3", ioe);
+        }
+      }
+    }
+  }
+
+  private void recoverPartition(TopicPartition tp) throws IOException {
+    this.context.pause(tp);
+
+    // Recover last committed offset from S3
+    long offset = s3.fetchOffset(tp);
+
+    log.info("Recovering partition {} from offset {}", tp, offset);
+
+    BlockGZIPFileWriter w = createNextBlockWriter(tp, offset);
+    tmpFiles.put(tp, w);
+
+    this.context.offset(tp, offset);
+    this.context.resume(tp);
   }
 }
