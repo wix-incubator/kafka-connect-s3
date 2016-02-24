@@ -1,6 +1,6 @@
-= System Test
+# System Test
 
-== Installing Dependencies
+## Installing Dependencies
 
 These steps should be required just once.
 
@@ -25,12 +25,12 @@ $ [sudo] pip install kafka-python
 $ [sudo] pip install boto
 ```
 
-== Setup Before Test Session
+## Setup Before Test Session
 
 Since setup is somewhat expensive and complicated to automate in a highly portable fashion, we
 make setup a somewhat manual step to perform before running tests.
 
-==== 1. Ensure standalone docker image is running
+#### 1. Ensure standalone docker image is running
 
 Kafka must be accessible on `localhost:9092`.
 
@@ -57,7 +57,7 @@ $ docker-machine ssh default -f -N -L 9092:localhost:9092 -L 2181:localhost:2181
 The same should work with regular ssh for a non-docker machine VM.
 
 
-== Running Tests
+## Running Tests
 
 From the repo root dir, run:
 
