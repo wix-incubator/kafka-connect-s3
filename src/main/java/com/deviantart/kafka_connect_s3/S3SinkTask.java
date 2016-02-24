@@ -60,8 +60,8 @@ public class S3SinkTask extends SinkTask {
     if (bucket == null || bucket == "") {
       throw new ConnectException("S3 bucket must be configured");
     }
-    if (prefix == null || prefix == "") {
-      prefix = "/";
+    if (prefix == null) {
+      prefix = "";
     }
 
     // Use default credentials provider that looks in Env + Java properties + profile + instance role
@@ -86,7 +86,7 @@ public class S3SinkTask extends SinkTask {
 
   @Override
   public void stop() throws ConnectException {
-    // TODO we could try to be smart and flush buffer files to be resumed
+    // We could try to be smart and flush buffer files to be resumed
     // but for now we just start again from where we got to in S3 and overwrite any
     // buffers on disk.
   }

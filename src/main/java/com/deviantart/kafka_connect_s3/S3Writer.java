@@ -60,6 +60,9 @@ public class S3Writer {
   }
 
   public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client, TransferManager tm) {
+    if (keyPrefix.length() > 0 && !keyPrefix.endsWith("/")) {
+      keyPrefix += "/";
+    }
     this.keyPrefix = keyPrefix;
     this.bucket = bucket;
     this.s3Client = s3Client;
@@ -73,8 +76,6 @@ public class S3Writer {
     // Read offset first since we'll delete the file after upload
     long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
 
-    //this.uploadFile(dataFileKey, localDataFile);
-    //this.uploadFile(idxFileKey, localIndexFile);
     try {
       Upload upload = tm.upload(this.bucket, dataFileKey, new File(localDataFile));
       upload.waitForCompletion();
@@ -148,71 +149,16 @@ public class S3Writer {
     }
   }
 
-  /*private void uploadFile(String name, String localPath) throws IOException {
-    // Create a list of UploadPartResponse objects. You get one of these
-    // for each part upload.
-    List<PartETag> partETags = new ArrayList<PartETag>();
-
-    // Step 1: Initialize.
-    InitiateMultipartUploadRequest initRequest = new
-         InitiateMultipartUploadRequest(this.bucket, name);
-    InitiateMultipartUploadResult initResponse =
-                         s3Client.initiateMultipartUpload(initRequest);
-
-    File file = new File(localPath);
-    long contentLength = file.length();
-    long partSize = 5 * 1024 * 1024; // Set part size to 5 MB.
-
-    try {
-      // Step 2: Upload parts.
-      long filePosition = 0;
-      for (int i = 1; filePosition < contentLength; i++) {
-          // Last part can be less than 5 MB. Adjust part size.
-        partSize = Math.min(partSize, (contentLength - filePosition));
-
-        // Create request to upload a part.
-        UploadPartRequest uploadRequest = new UploadPartRequest()
-          .withBucketName(this.bucket).withKey(name)
-          .withUploadId(initResponse.getUploadId()).withPartNumber(i)
-          .withFileOffset(filePosition)
-          .withFile(file)
-          .withPartSize(partSize);
-
-        // Upload part and add response to our list.
-        partETags.add(s3Client.uploadPart(uploadRequest).getPartETag());
-
-        filePosition += partSize;
-      }
-
-      // Step 3: Complete.
-      CompleteMultipartUploadRequest compRequest = new
-                  CompleteMultipartUploadRequest(this.bucket,
-                                                 name,
-                                                 initResponse.getUploadId(),
-                                                 partETags);
-
-      s3Client.completeMultipartUpload(compRequest);
-
-      // All done, delete the local copy
-      file.delete();
-
-    } catch (Exception e) {
-        s3Client.abortMultipartUpload(new AbortMultipartUploadRequest(
-                  this.bucket, name, initResponse.getUploadId()));
-        throw new IOException("Failed to complete Multipart Upload", e);
-    }
-  }*/
-
   // We store chunk files with a date prefix just to make finding them and navigating around the bucket a bit easier
   // date is meaningless other than "when this was uploaded"
   private String getChunkFileKey(String localFilePath) {
     Path p = Paths.get(localFilePath);
     SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-    return String.format("%s/%s/%s", keyPrefix, df.format(new Date()), p.getFileName().toString());
+    return String.format("%s%s/%s", keyPrefix, df.format(new Date()), p.getFileName().toString());
   }
 
   private String getTopicPartitionLastIndexFileKey(TopicPartition tp) {
-    return String.format("%s/last_chunk_index.%s-%05d.txt", this.keyPrefix, tp.topic(), tp.partition());
+    return String.format("%slast_chunk_index.%s-%05d.txt", this.keyPrefix, tp.topic(), tp.partition());
   }
 
   private void updateCursorFile(String lastIndexFileKey, TopicPartition tp) throws IOException {
