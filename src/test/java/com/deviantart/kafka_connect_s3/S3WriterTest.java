@@ -6,18 +6,13 @@ import org.mockito.ArgumentCaptor;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
-import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.amazonaws.services.s3.model.UploadPartRequest;
-import com.amazonaws.services.s3.model.UploadPartResult;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.Upload;
 
 import org.apache.kafka.common.TopicPartition;
 
@@ -81,71 +76,28 @@ public class S3WriterTest extends TestCase {
     return writer;
   }
 
-  private void stubMultipartMethods(AmazonS3 mock) {
-    when(mock.initiateMultipartUpload(isA(InitiateMultipartUploadRequest.class)))
-      .thenReturn(new InitiateMultipartUploadResult());
-
-    when(mock.uploadPart(isA(UploadPartRequest.class)))
-      .thenReturn(new UploadPartResult());
-  }
-
   class ExpectedRequestParams {
     public String key;
     public String bucket;
-    public ExpectedPartParams[] parts;
-    public ExpectedRequestParams(String k, String b, ExpectedPartParams[] pts) {
+    public ExpectedRequestParams(String k, String b) {
       key = k;
       bucket = b;
-      parts = pts;
-    }
-  }
-  class ExpectedPartParams {
-    public long offset = 0;
-    public ExpectedPartParams(long off) {
-      offset = off;
     }
   }
 
-  private void verifyMultipartMethods(AmazonS3 mock, ExpectedRequestParams[] expect) {
-    ArgumentCaptor<InitiateMultipartUploadRequest> argument
-      = ArgumentCaptor.forClass(InitiateMultipartUploadRequest.class);
-    verify(mock, times(expect.length))
-      .initiateMultipartUpload(argument.capture());
+  private void verifyTMUpload(TransferManager mock, ExpectedRequestParams[] expect) {
+    ArgumentCaptor<String> bucketCaptor = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+    verify(mock, times(expect.length)).upload(bucketCaptor.capture(), keyCaptor.capture()
+      ,any(File.class));
 
-    int i = 0;
-    int sumParts = 0;
-    for (InitiateMultipartUploadRequest req : argument.getAllValues()) {
-      ExpectedRequestParams expected = expect[i];
-      assertEquals(expected.key, req.getKey());
-      assertEquals(expected.bucket, req.getBucketName());
-      i++;
-      sumParts += expected.parts.length;
+    List<String> bucketArgs = bucketCaptor.getAllValues();
+    List<String> keyArgs = keyCaptor.getAllValues();
+
+    for (int i = 0 ; i < expect.length; i++) {
+      assertEquals(expect[i].bucket, bucketArgs.remove(0));
+      assertEquals(expect[i].key, keyArgs.remove(0));
     }
-
-    ArgumentCaptor<UploadPartRequest> partArg
-        = ArgumentCaptor.forClass(UploadPartRequest.class);
-      verify(mock, times(sumParts))
-        .uploadPart(partArg.capture());
-
-    int reqIdx = 0;
-    int partIdx = 0;
-    for (UploadPartRequest partReq : partArg.getAllValues()) {
-      while (partIdx >= expect[reqIdx].parts.length) {
-        reqIdx++;
-        partIdx = 0;
-      }
-      ExpectedRequestParams expected = expect[reqIdx];
-      ExpectedPartParams expectedPart = expected.parts[partIdx];
-      partIdx++;
-
-      // Verify part params are as expected
-      assertEquals(expected.key, partReq.getKey());
-      assertEquals(expected.bucket, partReq.getBucketName());
-      assertEquals(expectedPart.offset, partReq.getFileOffset());
-    }
-
-    verify(mock, times(expect.length))
-      .completeMultipartUpload(isA(CompleteMultipartUploadRequest.class));
   }
 
   private void verifyStringPut(AmazonS3 mock, String key, String content) throws Exception {
@@ -179,21 +131,23 @@ public class S3WriterTest extends TestCase {
 
   public void testUpload() throws Exception {
     AmazonS3 s3Mock = mock(AmazonS3.class);
+    TransferManager tmMock = mock(TransferManager.class);
     BlockGZIPFileWriter fileWriter = createDummmyFiles(0, 1000);
-    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock);
+    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock, tmMock);
     TopicPartition tp = new TopicPartition("bar", 0);
 
-    stubMultipartMethods(s3Mock);
+    Upload mockUpload = mock(Upload.class);
+
+    when(tmMock.upload(eq(testBucket), eq(getKeyForFilename("pfx", "bar-00000-000000000000.gz")), isA(File.class)))
+      .thenReturn(mockUpload);
+    when(tmMock.upload(eq(testBucket), eq(getKeyForFilename("pfx", "bar-00000-000000000000.index.json")), isA(File.class)))
+      .thenReturn(mockUpload);
 
     s3Writer.putChunk(fileWriter.getDataFilePath(), fileWriter.getIndexFilePath(), tp);
 
-    verifyMultipartMethods(s3Mock, new ExpectedRequestParams[]{
-      new ExpectedRequestParams(getKeyForFilename("pfx", "bar-00000-000000000000.gz"), testBucket, new ExpectedPartParams[]{
-        new ExpectedPartParams(0)
-      }),
-      new ExpectedRequestParams(getKeyForFilename("pfx", "bar-00000-000000000000.index.json"), testBucket, new ExpectedPartParams[]{
-        new ExpectedPartParams(0)
-      })
+    verifyTMUpload(tmMock, new ExpectedRequestParams[]{
+      new ExpectedRequestParams(getKeyForFilename("pfx", "bar-00000-000000000000.gz"), testBucket),
+      new ExpectedRequestParams(getKeyForFilename("pfx", "bar-00000-000000000000.index.json"), testBucket)
     });
 
     // Verify it also wrote the index file key

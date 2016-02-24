@@ -3,17 +3,13 @@ package com.deviantart.kafka_connect_s3;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
 import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.amazonaws.services.s3.model.UploadPartRequest;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.Upload;
 
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -53,15 +49,21 @@ public class S3Writer {
   private String keyPrefix;
   private String bucket;
   private AmazonS3 s3Client;
+  private TransferManager tm;
 
   public S3Writer(String bucket, String keyPrefix) {
     this(bucket, keyPrefix, new AmazonS3Client(new ProfileCredentialsProvider()));
   }
 
   public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client) {
+    this(bucket, keyPrefix, s3Client, new TransferManager(s3Client));
+  }
+
+  public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client, TransferManager tm) {
     this.keyPrefix = keyPrefix;
     this.bucket = bucket;
     this.s3Client = s3Client;
+    this.tm = tm;
   }
 
   public long putChunk(String localDataFile, String localIndexFile, TopicPartition tp) throws IOException {
@@ -71,8 +73,17 @@ public class S3Writer {
     // Read offset first since we'll delete the file after upload
     long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
 
-    this.uploadFile(dataFileKey, localDataFile);
-    this.uploadFile(idxFileKey, localIndexFile);
+    //this.uploadFile(dataFileKey, localDataFile);
+    //this.uploadFile(idxFileKey, localIndexFile);
+    try {
+      Upload upload = tm.upload(this.bucket, dataFileKey, new File(localDataFile));
+      upload.waitForCompletion();
+      upload = tm.upload(this.bucket, idxFileKey, new File(localIndexFile));
+      upload.waitForCompletion();
+    } catch (Exception e) {
+      throw new IOException("Failed to upload to S3", e);
+    }
+
     this.updateCursorFile(idxFileKey, tp);
 
     // Sanity check - return what the new nextOffset will be based on the index we just uploaded
@@ -137,7 +148,7 @@ public class S3Writer {
     }
   }
 
-  private void uploadFile(String name, String localPath) throws IOException {
+  /*private void uploadFile(String name, String localPath) throws IOException {
     // Create a list of UploadPartResponse objects. You get one of these
     // for each part upload.
     List<PartETag> partETags = new ArrayList<PartETag>();
@@ -190,7 +201,7 @@ public class S3Writer {
                   this.bucket, name, initResponse.getUploadId()));
         throw new IOException("Failed to complete Multipart Upload", e);
     }
-  }
+  }*/
 
   // We store chunk files with a date prefix just to make finding them and navigating around the bucket a bit easier
   // date is meaningless other than "when this was uploaded"

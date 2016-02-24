@@ -131,6 +131,10 @@ public class BlockGZIPFileWriter {
     return chunks.get(chunks.size() - 1);
   }
 
+  public long getFirstRecordOffset() {
+    return firstRecordOffset;
+  }
+
   public String getDataFileName() {
     return String.format("%s-%012d.gz", filenameBase, firstRecordOffset);
   }

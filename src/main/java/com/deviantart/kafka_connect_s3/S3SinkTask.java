@@ -1,5 +1,9 @@
 package com.deviantart.kafka_connect_s3;
 
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.S3ClientOptions;
+
 import java.util.HashMap;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -59,7 +63,21 @@ public class S3SinkTask extends SinkTask {
     if (prefix == null || prefix == "") {
       prefix = "/";
     }
-    s3 = new S3Writer(bucket, prefix);
+
+    // Use default credentials provider that looks in Env + Java properties + profile + instance role
+    AmazonS3 s3Client = new AmazonS3Client();
+
+    // If worker config sets explicit endpoint override (e.g. for testing) use that
+    String s3Endpoint = config.get("s3.endpoint");
+    if (s3Endpoint != null && s3Endpoint != "") {
+      s3Client.setEndpoint(s3Endpoint);
+    }
+    Boolean s3PathStyle = Boolean.parseBoolean(config.get("s3.path_style"));
+    if (s3PathStyle) {
+      s3Client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
+    }
+
+    s3 = new S3Writer(bucket, prefix, s3Client);
 
     // Recover initial assignments
     Set<TopicPartition> assignment = context.assignment();
@@ -94,11 +112,14 @@ public class S3SinkTask extends SinkTask {
 
   @Override
   public void flush(Map<TopicPartition, OffsetAndMetadata> offsets) throws ConnectException {
-    for (TopicPartition tp : offsets.keySet()) {
-      BlockGZIPFileWriter writer = tmpFiles.get(tp);
-      if (writer == null) {
-        throw new ConnectException("Trying to flush records for a topic partition that has not be assigned");
-      }
+    // Don't rely on offsets passed. They have some quirks like including topic partitions that just
+    // got revoked (i.e. we have deleted the writer already). Not sure if this is intended...
+    // https://twitter.com/mr_paul_banks/status/702493772983177218
+
+    // Instead iterate over the writers we do have and get the offsets directly from them.
+    for (Map.Entry<TopicPartition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
+      TopicPartition tp = entry.getKey();
+      BlockGZIPFileWriter writer = entry.getValue();
       if (writer.getNumRecords() == 0) {
         // Not done anything yet
         log.info("No new records for partition {}", tp);
@@ -109,11 +130,9 @@ public class S3SinkTask extends SinkTask {
 
         long nextOffset = s3.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), tp);
 
-        OffsetAndMetadata om = offsets.get(tp);
-
         // Now reset writer to a new one
-        tmpFiles.put(tp, this.createNextBlockWriter(tp, om.offset()));
-        log.info("Successfully uploaded chunk for {} now at offset {}", tp, om.offset());
+        tmpFiles.put(tp, this.createNextBlockWriter(tp, nextOffset));
+        log.info("Successfully uploaded chunk for {} now at offset {}", tp, nextOffset);
       } catch (FileNotFoundException fnf) {
         throw new ConnectException("Failed to find local dir for temp files", fnf);
       } catch (IOException e) {
