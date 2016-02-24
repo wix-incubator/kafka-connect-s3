@@ -16,7 +16,22 @@ For now there is just one output format which is essentially just a GZIPed text 
 
 It's actually a little more sophisticated than that though. We exploit a property of GZIP whereby multiple GZIP encoded files can be concatenated to produce a single file. Such a concatenated file is a valid GZIP file in its own right and will be decompressed by _any GZIP implementation_ to a single stream of lines -- exactly as if the input files were concatenated first and compressed together.
 
-So we output 2 files per chunk:
+We output 2 files per chunk
+
+```
+$ tree system_test/data/connect-system-test/systest/2016-02-24/
+system_test/data/connect-system-test/systest/2016-02-24/
+├── system-test-00000-000000000000.gz
+├── system-test-00000-000000000000.index.json
+├── system-test-00000-000000000100.gz
+├── system-test-00000-000000000100.index.json
+├── system-test-00000-000000000200.gz
+├── system-test-00000-000000000200.index.json
+├── system-test-00001-000000000000.gz
+├── system-test-00001-000000000000.index.json
+├── system-test-00002-000000000000.gz
+└── system-test-00002-000000000000.index.json
+```
  - the actual *.gz file which can be read and treated as a plain old gzip file on it's own
  - a *.index.json file which described the byte positions of each "block" inside the file
 
@@ -24,11 +39,33 @@ If you don't care about seeking to specific offsets efficiently then ignore the 
 
 If you want to have somewhat efficient seeking to particular offset though, you can do it like this:
  - List bucket contents and locate the chunk that the offset is in
- - Download the `*.index.json` file for that chunk
+ - Download the `*.index.json` file for that chunk, it looks something like this:
+```
+$ cat system-test-00000-000000000000.index.json | jq -M '.'
+{
+  "chunks": [
+    {
+      "byte_length_uncompressed": 2890,
+      "num_records": 100,
+      "byte_length": 275,
+      "byte_offset": 0,
+      "first_record_offset": 0
+    },
+    {
+      "byte_length_uncompressed": 3121,
+      "num_records": 123,
+      "byte_length": 325,
+      "byte_offset": 275,
+      "first_record_offset": 100
+    },
+    ...
+  ]
+}
+```
  - Iterate through the "chunks" described in the index. Each has a `first_record_offset` and `num_records` so you can work out if the offset you want to find is in that chunk.
  - When you've found the correct chunk, use the `byte_offset` and `byte_length` fields to make a [range request](https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35) to S3 to download only the block you care about.
   - Depending on your needs you can either limit to just the single block, or if you want to consume all records after that offset, you can consume from the offset right to the end of the file
- - The range request bytes can be decompressed as a GZIP file on their own with any GZIp compatible tool, provided you limit to whole block boundaries.
+ - The range request bytes can be decompressed as a GZIP file on their own with any GZIP compatible tool, provided you limit to whole block boundaries.
 
 For now it assumes the kafka messages can be output as newline-delimited text files. We could make the output format pluggable if others have use for this connector.
 
@@ -36,7 +73,7 @@ For now it assumes the kafka messages can be output as newline-delimited text fi
 
 You should be able to build this with `mvn package`.
 
-There is a script `local-run.sh` which you can inspect to see how to get it running. That relies on local kafka instance setup described in testing section below.
+There is a script `local-run.sh` which you can inspect to see how to get it running. This script relies on having a local kafka instance setup as described in testing section below.
 
 ## Testing
 
