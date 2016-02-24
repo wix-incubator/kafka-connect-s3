@@ -10,11 +10,25 @@ That said, we've put some effort into a reasonably thorough test suite and will 
 
 If you use it, you will likely find issues or ways it can be improved. Please feel free to create pull requests/issues and we will do our best to merge anything that helps overall (especially if it has passing tests ;)).
 
+This was built against Kafka 0.9.0.0 although since starting 0.9.0.1 has been released and will be supported very soon!
+
 ## Block-GZIP Output Format
 
 For now there is just one output format which is essentially just a GZIPed text file per chunk with one Kafka message per line.
 
 It's actually a little more sophisticated than that though. We exploit a property of GZIP whereby multiple GZIP encoded files can be concatenated to produce a single file. Such a concatenated file is a valid GZIP file in its own right and will be decompressed by _any GZIP implementation_ to a single stream of lines -- exactly as if the input files were concatenated first and compressed together.
+
+### Rationale
+
+This allows us to keep chunk files large which is good for most common case of large batch/ETL workloads, while enabling relatively efficient access if needed. 
+
+If we sized each file at just 64MB then operating on a weeks data might require opening 10s or 100s of thousands of separate S3 objects which has non-trivial overhead compared to a few hundred. It also costs more to list bucket contents when you have millions of objects for a relatively short time period since S3 list operations can only return 1000 at once. So we wanted chunks of about 500MB to 1GB in size for most cases.
+
+But in some rarer cases, we might want to resume processing from a specific offset in middle of a block, or pull just a few records at a specific offset. Rather than pull the whole 1GB chunk each time we need that, this scheme allows us to quickly find a much smaller chunk to satisfy the read. 
+
+We use a chunk threshold of 64MB by default although it's configurable. Keep in mind this is 64MB of _uncompressed_ input records, so the actual block within the file is likely to be significantly smaller depdneing on how compressible your data is.
+
+### Example
 
 We output 2 files per chunk
 
@@ -67,13 +81,31 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
   - Depending on your needs you can either limit to just the single block, or if you want to consume all records after that offset, you can consume from the offset right to the end of the file
  - The range request bytes can be decompressed as a GZIP file on their own with any GZIP compatible tool, provided you limit to whole block boundaries.
 
-For now it assumes the kafka messages can be output as newline-delimited text files. We could make the output format pluggable if others have use for this connector.
+## Other Formats
+
+For now we only support Block-GZIP output. This assumes that all your kafka messages can be output as newline-delimited text files.
+
+We could make the output format pluggable if others have use for this connector, but need binary serialisation formats like Avro/Thrift/Protobuf etc. Pull requests welcome.
 
 ## Build and Run
 
 You should be able to build this with `mvn package`.
 
 There is a script `local-run.sh` which you can inspect to see how to get it running. This script relies on having a local kafka instance setup as described in testing section below.
+
+## Configuration
+
+In addition to the [standard kafka-connect config options](http://kafka.apache.org/documentation.html#connectconfigs) we support/require the following, in the task properties file or REST config:
+
+| Config Key | Default | Notes |
+| ---------- | ------- | ----- |
+| s3.bucket | **REQUIRED** | The name of the bucket to write too. |
+| s3.prefix | `""` | Prefix added to all object keys stored in bucket to "namespace" them. |
+| s3.endpoint | AWS defaults per region | Mostly useful for testing. |
+| s3.path_style | `false` | Force path-style access to bucket rather than subdomain. Mostly useful for tests. |
+| compressed_block_size | 67108864 | How much _uncompressed_ data to write to the file before we rol to a new block/chunk. See [Block-GZIP](#user-content-block-gzip-output-format) section above. |
+
+Note that we use the default AWS SDK credentials provider. [Refer to their docs](http://docs.aws.amazon.com/AWSSdkDocsJava/latest/DeveloperGuide/credentials.html#id1) for the options for configuring S3 credentials.
 
 ## Testing
 
