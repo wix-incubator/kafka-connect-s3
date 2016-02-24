@@ -6,9 +6,9 @@ This is a [kafka-connect](http://kafka.apache.org/documentation.html#connect) si
 
 This is pre-production code. Use at your own risk.
 
-That said, we've put some effort into a reasonably thorough test suite and I will be putting it into production shortly. Will update this notice when we have it running smoothly in production.
+That said, we've put some effort into a reasonably thorough test suite and will be putting it into production shortly. We will update this notice when we have it running smoothly in production.
 
-If you use it, you will likely find issues or improvements, please feel free to create pull requests/issues and we will do our best to merge anything that helps overall (especially if it has passing tests ;)).
+If you use it, you will likely find issues or ways it can be improved. Please feel free to create pull requests/issues and we will do our best to merge anything that helps overall (especially if it has passing tests ;)).
 
 ## Block-GZIP Output Format
 
