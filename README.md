@@ -55,7 +55,7 @@ If you don't care about seeking to specific offsets efficiently then ignore the 
 
 If you want to have somewhat efficient seeking to particular offset though, you can do it like this:
  - List bucket contents and locate the chunk that the offset is in
- - Download the `*.index.json` file for that chunk, it looks something like this:
+ - Download the `*.index.json` file for that chunk, it looks something like this (note these are artificially small chunks):
 ```
 $ cat system-test-00000-000000000000.index.json | jq -M '.'
 {
