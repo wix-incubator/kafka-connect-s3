@@ -53,6 +53,8 @@ system_test/data/connect-system-test/systest/2016-02-24/
 
 If you don't care about seeking to specific offsets efficiently then ignore the index files and just use the *.gz as if it's a plain old gzip file.
 
+Note file name format is: `<topic name>-<zero-padded partition>-<zero-padded offset of first record>.*`. That implies that if you exceed 10k partitions in a topic or a trillion message in a single partition, the files will no longer sort naturally. In practice that is probably not a big deal anyway since we prefix with upload date too to make listing recent files easier. Making padding length configurable is an option. It's mostly makes things simpler to eyeball with low numbers where powers of ten change fast anyway.
+
 If you want to have somewhat efficient seeking to particular offset though, you can do it like this:
  - List bucket contents and locate the chunk that the offset is in
  - Download the `*.index.json` file for that chunk, it looks something like this (note these are artificially small chunks):
@@ -79,6 +81,7 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
 }
 ```
  - Iterate through the "chunks" described in the index. Each has a `first_record_offset` and `num_records` so you can work out if the offset you want to find is in that chunk.
+  - `first_record_offset` is the absolute kafka topic-partition offset of the first message in the chunk. Hence the first chunk in the index will always have the same `first_record_offset` as the offset in the file name - `0` in this case.
  - When you've found the correct chunk, use the `byte_offset` and `byte_length` fields to make a [range request](https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35) to S3 to download only the block you care about.
   - Depending on your needs you can either limit to just the single block, or if you want to consume all records after that offset, you can consume from the offset right to the end of the file
  - The range request bytes can be decompressed as a GZIP file on their own with any GZIP compatible tool, provided you limit to whole block boundaries.
