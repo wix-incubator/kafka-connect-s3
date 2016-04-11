@@ -10,7 +10,7 @@ That said, we've put some effort into a reasonably thorough test suite and will 
 
 If you use it, you will likely find issues or ways it can be improved. Please feel free to create pull requests/issues and we will do our best to merge anything that helps overall (especially if it has passing tests ;)).
 
-This was built against Kafka 0.9.0.0 although since starting 0.9.0.1 has been released and will be supported very soon!
+This was built against Kafka 0.9.0.1.
 
 ## Block-GZIP Output Format
 

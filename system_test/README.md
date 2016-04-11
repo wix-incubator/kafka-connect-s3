@@ -37,7 +37,7 @@ Kafka must be accessible on `localhost:9092`.
 Run it with:
 
 ```
-$ docker run --name kafka -d --net=host -e HOSTNAME=localhost deviantart/standalone-kafka
+$ docker run -d --net=host -e HOSTNAME=localhost deviantart/standalone-kafka
 ```
 
 The `name` param means you can use `$ docker kill kafka` when you're done.

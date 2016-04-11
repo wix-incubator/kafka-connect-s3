@@ -10,6 +10,7 @@ from kafka import KafkaProducer
 import json
 from boto.s3.connection import S3Connection, OrdinaryCallingFormat
 import zlib
+import xml.etree.ElementTree as ET
 
 this_dir = os.path.dirname(__file__)
 
@@ -149,8 +150,12 @@ def tearDownModule():
 
 def runS3ConnectStandalone():
     global g_s3connect_proc
+    # quick hack to get version from pom.
+    tree = ET.parse(os.path.join(this_dir, '..', 'pom.xml'))
+    root = tree.getroot()
+    version = root.find('{http://maven.apache.org/POM/4.0.0}version').text
     env = {
-        'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-1.0-SNAPSHOT.jar')
+        'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-{}.jar'.format(version))
     }
     cmd = [os.path.join(this_dir, 'standalone-kafka/kafka/bin/connect-standalone.sh'),
           os.path.join(this_dir, 'system-test-worker.properties'),
