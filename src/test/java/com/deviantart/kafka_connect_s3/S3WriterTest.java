@@ -46,7 +46,7 @@ public class S3WriterTest extends TestCase {
     super(testName);
 
     String tempDir = System.getProperty("java.io.tmpdir");
-    this.tmpDir = tempDir.concat(tmpDirPrefix);
+    this.tmpDir = new File(tempDir, tmpDirPrefix).toString();
 
     System.out.println("Temp dir for writer test is: " + tmpDir);
   }
