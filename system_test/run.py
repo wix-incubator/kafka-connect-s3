@@ -38,6 +38,13 @@ g_s3_conn = S3Connection('foo', 'bar', is_secure=False, port=9090, host='localho
                         calling_format=OrdinaryCallingFormat())
 
 
+def connect_version():
+    # quick hack to get version from pom.
+    tree = ET.parse(os.path.join(this_dir, '..', 'pom.xml'))
+    root = tree.getroot()
+    version = root.find('{http://maven.apache.org/POM/4.0.0}version').text
+    return version
+
 # requires proc to be Popened with stdout=subprocess.PIPE,stderr=subprocess.STDOUT
 def dumpServerStdIO(proc, msg, until=None, until_fail=None, timeout=None, trim_indented=False, post_fail_lines=20):
     sys.stdout.write(msg + os.linesep)
@@ -137,10 +144,6 @@ def setUpModule():
 
 def tearDownModule():
     global g_fakes3_proc
-    if g_s3connect_proc is not None:
-        print "Terminating Kafka Connect"
-        g_s3connect_proc.kill()
-        g_s3connect_proc.wait()
     if g_fakes3_proc is not None:
         print "Terminating FakeS3"
         g_fakes3_proc.kill()
@@ -148,18 +151,17 @@ def tearDownModule():
 
     print "TEARDOWN DONE"
 
-def runS3ConnectStandalone():
+def runS3ConnectStandalone(worker_props ='system-test-worker.properties', sink_props ='system-test-s3-sink.properties', debug=False):
     global g_s3connect_proc
-    # quick hack to get version from pom.
-    tree = ET.parse(os.path.join(this_dir, '..', 'pom.xml'))
-    root = tree.getroot()
-    version = root.find('{http://maven.apache.org/POM/4.0.0}version').text
+    version = connect_version()
     env = {
         'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-{}.jar'.format(version))
     }
+    if debug:
+        env['KAFKA_JMX_OPTS'] = '-agentlib:jdwp=transport=dt_socket,server=y,address=8000,suspend=y'
     cmd = [os.path.join(this_dir, 'standalone-kafka/kafka/bin/connect-standalone.sh'),
-          os.path.join(this_dir, 'system-test-worker.properties'),
-          os.path.join(this_dir, 'system-test-s3-sink.properties')]
+           os.path.join(this_dir, worker_props),
+           os.path.join(this_dir, sink_props)]
 
     g_s3connect_proc = subprocess.Popen(cmd,
                                        stdout=subprocess.PIPE,
@@ -174,6 +176,12 @@ def runS3ConnectStandalone():
     return g_s3connect_proc
 
 class TestConnectS3(unittest.TestCase):
+    def tearDown(self):
+        if g_s3connect_proc is not None:
+            print "Terminating Kafka Connect"
+            g_s3connect_proc.kill()
+            g_s3connect_proc.wait()
+
     '''
     These tests are highly non-deterministic, but they pass almost always on my local setup.
 
@@ -202,7 +210,7 @@ class TestConnectS3(unittest.TestCase):
         ok, line = dumpServerStdIO(s3connect, "Wait for connect to process and commit",
                                   until="Successfully uploaded chunk for system-test-0",
                                   until_fail="ERROR",
-                                  timeout=5, trim_indented=True)
+                                  timeout=15, trim_indented=True)
 
         self.assertTrue(ok, msg="Didn't get success message but did get: {}".format(line))
 
@@ -238,7 +246,7 @@ class TestConnectS3(unittest.TestCase):
         ok, line = dumpServerStdIO(s3connect, "Wait for connect to process and commit",
                                   until="Successfully uploaded chunk for system-test-0",
                                   until_fail="ERROR",
-                                  timeout=5, trim_indented=True)
+                                  timeout=15, trim_indented=True)
 
         self.assertTrue(ok, msg="Didn't get success message but did get: {}".format(line))
 
@@ -283,19 +291,19 @@ class TestConnectS3(unittest.TestCase):
         ok, line = dumpServerStdIO(s3connect, "Wait for connect to process and commit 1/3",
                                   until="Successfully uploaded chunk for system-test-",
                                   until_fail="ERROR",
-                                  timeout=5, trim_indented=True)
+                                  timeout=15, trim_indented=True)
         self.assertTrue(ok, msg="Didn't get success message but did get: {}".format(line))
 
         ok, line = dumpServerStdIO(s3connect, "Wait for connect to process and commit 2/3",
                                   until="Successfully uploaded chunk for system-test-",
                                   until_fail="ERROR",
-                                  timeout=5, trim_indented=True)
+                                  timeout=15, trim_indented=True)
         self.assertTrue(ok, msg="Didn't get success message but did get: {}".format(line))
 
         ok, line = dumpServerStdIO(s3connect, "Wait for connect to process and commit 3/3",
                                   until="Successfully uploaded chunk for system-test-",
                                   until_fail="ERROR",
-                                  timeout=5, trim_indented=True)
+                                  timeout=15, trim_indented=True)
         self.assertTrue(ok, msg="Didn't get success message but did get: {}".format(line))
 
         # partition 0
@@ -327,6 +335,49 @@ class TestConnectS3(unittest.TestCase):
 
 
         self.assert_s3_file_contents(pfx+'system-test-00002-000000000000.gz', expected_partitions[2], gzipped=True)
+
+    def test_binary_format(self):
+        global g_producer
+        topic = "binary-system-test"
+
+        # delete the topic before we start so we don't get extra messages
+        sys.stderr.write(subprocess.check_output([os.path.join(this_dir, 'standalone-kafka/kafka/bin/kafka-topics.sh'),
+                         '--zookeeper', 'localhost:2181', '--delete', '--topic', topic]))
+
+        debug=False
+        s3connect = runS3ConnectStandalone(
+            debug=debug,
+            worker_props ='system-test-binary-worker.properties',
+            sink_props ='system-test-s3-binary-sink.properties')
+
+        # messages produced asynchronously - synchronous producing makes it likely
+        # they will be split into different flushes in connect
+        expected_data = ''
+        for i in range(0, 100):
+            record = b'{}\n'.format(i)
+            g_producer.send(topic, record)
+            expected_data += record
+
+        g_producer.flush()
+
+        ok, line = dumpServerStdIO(s3connect, "Wait for binary sink to process and commit",
+                                   until="Successfully uploaded chunk for binary-system-test-0",
+                                   until_fail="ERROR",
+                                   timeout=(1000000 if debug else 15), trim_indented=True)
+
+        self.assertTrue(ok, msg="Didn't get success message but did get: {}".format(line))
+
+        # run the reader to dump what we just wrote
+        version = connect_version()
+        env = {
+            'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-{}.jar'.format(version))
+        }
+        cmd = [os.path.join(this_dir, 'standalone-kafka/kafka/bin/kafka-run-class.sh'),
+               "com.deviantart.kafka_connect_s3.S3FilesReader",
+               os.path.join(this_dir, 'system-test-s3-binary-sink.properties')]
+
+        self.assertEqual(expected_data, subprocess.check_output(cmd, env=env))
+
 
     def assert_s3_file_contents(self, key, content, gzipped=False, encoding="utf-8"):
         global g_s3_conn

@@ -88,9 +88,32 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
 
 ## Other Formats
 
+### Text Format
+
 For now we only support Block-GZIP output. This assumes that all your kafka messages can be output as newline-delimited text files.
 
-We could make the output format pluggable if others have use for this connector, but need binary serialisation formats like Avro/Thrift/Protobuf etc. Pull requests welcome.
+### Binary Format
+
+If you need message keys, or your records cannot be newline delimited, you can use the binary format.
+
+The raw bytes of the key + value, each prefixed with 4 bytes to indicate the length will be written for each record.
+
+To get binary output, you'll need to tell the sink to use the binary format
+and configure connect to use raw byte converters.
+
+connect-s3-sink.properties:
+```
+s3.binary.format=true
+```
+
+connect-worker.properties:
+```
+key.converter=com.deviantart.kafka_connect_s3.BytesConverter
+value.converter=com.deviantart.kafka_connect_s3.BytesConverter
+```
+
+See `BytesRecordReader` and `S3FilesReader` for reference implementations that reads the resulting binary files from S3.
+Both classes can be used to extract raw records from S3.
 
 ## Build and Run
 
