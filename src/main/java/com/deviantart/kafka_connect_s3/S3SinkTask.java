@@ -273,6 +273,16 @@ public class S3SinkTask extends SinkTask {
     }
   }
 
+  // HACK - added to SinkTask in 0.10
+  public void open(Collection<TopicPartition> partitions) {
+    this.onPartitionsAssigned(partitions);
+  }
+
+  // HACK - added to SinkTask in 0.10
+  public void close(Collection<TopicPartition> partitions) {
+    this.onPartitionsRevoked(partitions);
+  }
+
   private void recoverPartition(TopicPartition tp) throws IOException {
     this.context.pause(tp);
 

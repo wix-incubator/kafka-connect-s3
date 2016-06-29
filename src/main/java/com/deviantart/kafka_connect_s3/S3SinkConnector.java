@@ -1,5 +1,6 @@
 package com.deviantart.kafka_connect_s3;
 
+import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.Connector;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -45,5 +46,10 @@ public class S3SinkConnector extends Connector {
   @Override
   public void stop() throws ConnectException {
 
+  }
+
+  // @Override - added in 0.10
+  public ConfigDef config() {
+    return new ConfigDef();
   }
 }
