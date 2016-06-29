@@ -39,13 +39,13 @@ public class S3FilesReader implements Iterable<ConsumerRecord<byte[], byte[]>> {
 	private final String keyPrefix;
 	private final AmazonS3 s3Client;
 
-	private final BytesRecordReader reader = new BytesRecordReader();
+	private final BytesRecordReader reader;
 	private final LocalDate sinceDate;
 	private final int pageSize;
 
 
-	public S3FilesReader(String bucket, String keyPrefix, AmazonS3 s3Client) {
-		this(bucket, keyPrefix, s3Client, null, 500);
+	public S3FilesReader(String bucket, String keyPrefix, AmazonS3 s3Client, boolean fileIncludesKeys) {
+		this(bucket, keyPrefix, s3Client, null, 500, fileIncludesKeys);
 	}
 
 	/**
@@ -54,8 +54,9 @@ public class S3FilesReader implements Iterable<ConsumerRecord<byte[], byte[]>> {
 	 * @param s3Client s3 client.
 	 * @param sinceDate optional. The date to start from.
 	 * @param pageSize number of s3 objects to load at a time.
+	 * @param fileIncludesKeys do the S3 files contain the record keys as well as the values?
 	 */
-	public S3FilesReader(String bucket, String keyPrefix, AmazonS3 s3Client, LocalDate sinceDate, int pageSize) {
+	public S3FilesReader(String bucket, String keyPrefix, AmazonS3 s3Client, LocalDate sinceDate, int pageSize, boolean fileIncludesKeys) {
 		this.bucket = bucket;
 		this.keyPrefix = keyPrefix == null ? ""
 				: keyPrefix.endsWith("/") ? keyPrefix : keyPrefix + "/";
@@ -64,6 +65,7 @@ public class S3FilesReader implements Iterable<ConsumerRecord<byte[], byte[]>> {
 		// we have to filter out chunk indexes on this end, so
 		// whatever the requested page size is, we'll need twice that
 		this.pageSize = pageSize * 2;
+		this.reader = new BytesRecordReader(fileIncludesKeys);
 	}
 
 	public Iterator<ConsumerRecord<byte[], byte[]>> iterator() {
@@ -162,7 +164,7 @@ public class S3FilesReader implements Iterable<ConsumerRecord<byte[], byte[]>> {
 		}
 		AmazonS3 client = s3client(props);
 
-		S3FilesReader consumerRecords = new S3FilesReader(bucket, prefix, client);
+		S3FilesReader consumerRecords = new S3FilesReader(bucket, prefix, client, true);
 		for (ConsumerRecord<byte[], byte[]> record : consumerRecords) {
 			System.out.write(record.value());
 		}

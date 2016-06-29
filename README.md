@@ -92,19 +92,32 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
 
 For now we only support Block-GZIP output. This assumes that all your kafka messages can be output as newline-delimited text files.
 
+By default, only the value of a record is written out, encoded in UTF-8, and a newline (if not already present) is appended.
+
+Example connect-s3-sink.properties:
+
+```
+# If you specify a key converter, keys will also be written before each value.
+key.converter=com.deviantart.kafka_connect_s3.ToStringWithDelimiterConverter
+key.converter.encoding=UTF-16
+key.converter.delimiter=:
+
+# This is the default value converter and does not need to be specified, but can be configured.
+# value.converter=com.deviantart.kafka_connect_s3.ToStringWithDelimiterConverter
+value.converter.encoding=UTF-8 # default
+value.converter.delimiter=\n # newline is the default
+```
+
+The above config would write the key as UTF-16, followed by a `:`, then the value, UTF-8 encoded, followed by a newline.
+e.g., `key1:recorddata\n`
+
 ### Binary Format
 
-If you need message keys, or your records cannot be newline delimited, you can use the binary format.
+If your records cannot be delimited, you can use the binary converters.
 
 The raw bytes of the key + value, each prefixed with 4 bytes to indicate the length will be written for each record.
 
-To get binary output, you'll need to tell the sink to use the binary format
-and configure connect to use raw byte converters.
-
-connect-s3-sink.properties:
-```
-s3.binary.format=true
-```
+To get binary output, you'll need to configure your Connect cluster to use raw byte converters:
 
 connect-worker.properties:
 ```
@@ -112,8 +125,55 @@ key.converter=com.deviantart.kafka_connect_s3.BytesConverter
 value.converter=com.deviantart.kafka_connect_s3.BytesConverter
 ```
 
+connect-s3-sink.properties:
+
+```
+# if you don't want keys, remove the key.converter line from the sink properties
+key.converter=com.deviantart.kafka_connect_s3.BytesConverter
+value.converter=com.deviantart.kafka_connect_s3.BytesConverter
+```
+
+Note that both files need the converters to be specified.
+
 See `BytesRecordReader` and `S3FilesReader` for reference implementations that reads the resulting binary files from S3.
 Both classes can be used to extract raw records from S3.
+
+
+#### Binary Output from a non-binary Cluster
+
+If you already have a Connect Cluster running with a different root converter,
+it is still possible (with some additional overhead) to use the S3 Sink in binary mode,
+and still be compatible with `BytesRecordReader` and `S3FilesReader`.
+
+To convert non-binary schema back to to bytes for S3 storage,
+configure the bytes converter(s) with a sub-converter to generate the raw bytes:
+
+connect-worker.properties:
+```
+key.converter=com.whatever.Converter
+value.converter=com.whatever.OtherConverter
+value.converter.config.value=something
+```
+
+connect-s3-sink.properties:
+
+```
+key.converter=com.deviantart.kafka_connect_s3.BytesConverter
+key.converter.converter=key.converter=com.whatever.Converter
+
+value.converter=com.deviantart.kafka_connect_s3.BytesConverter
+value.converter.converter=com.whatever.OtherConverter
+value.converter.converter.config.value=something
+```
+
+#### Custom Output Format
+
+It is possible to fully customize your output needs with custom key and value
+converters. Instead of `BytesConverter` you may specify your own converter class
+and produce whatever byte output you desire.
+
+NOTE: `BytesRecordReader` and `S3FilesReader` will only work with records where the keys and values are
+preceded by a 4 byte, big endian value specifying the length of the key/value.
 
 ## Build and Run
 

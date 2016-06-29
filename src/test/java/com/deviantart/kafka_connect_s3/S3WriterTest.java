@@ -1,5 +1,6 @@
 package com.deviantart.kafka_connect_s3;
 
+import static com.deviantart.kafka_connect_s3.BlockGZIPFileWriterTest.toRecord;
 import static org.mockito.Mockito.*;
 import org.mockito.ArgumentCaptor;
 
@@ -62,10 +63,10 @@ public class S3WriterTest extends TestCase {
     }
   }
 
-  private BlockGZIPRecordWriter createDummmyFiles(long offset, int numRecords) throws Exception {
-    BlockGZIPStringWriter writer = new BlockGZIPStringWriter("bar-00000", tmpDir, offset);
+  private BlockGZIPFileWriter createDummmyFiles(long offset, int numRecords) throws Exception {
+    BlockGZIPFileWriter writer = new BlockGZIPFileWriter("bar-00000", tmpDir, offset);
     for (int i = 0; i < numRecords; i++) {
-      writer.write(String.format("Record %d", i));
+      writer.write(toRecord(String.format("Record %d", i)));
     }
     writer.close();
     return writer;
@@ -127,7 +128,7 @@ public class S3WriterTest extends TestCase {
   public void testUpload() throws Exception {
     AmazonS3 s3Mock = mock(AmazonS3.class);
     TransferManager tmMock = mock(TransferManager.class);
-    BlockGZIPRecordWriter fileWriter = createDummmyFiles(0, 1000);
+    BlockGZIPFileWriter fileWriter = createDummmyFiles(0, 1000);
     S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock, tmMock);
     TopicPartition tp = new TopicPartition("bar", 0);
 

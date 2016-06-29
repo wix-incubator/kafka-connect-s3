@@ -24,7 +24,13 @@ public class BytesRecordReader {
 
 	private final Pattern keyPattern;
 
-	public BytesRecordReader() {
+	private final boolean includesKeys;
+
+	/**
+	 * @param includesKeys do the serialized records include keys? Or just values?
+	 */
+	public BytesRecordReader(boolean includesKeys) {
+		this.includesKeys = includesKeys;
 		this.keyPattern = Pattern.compile(
 				"(\\/|^)" 						// match the / or the start of the key so we shouldn't have to worry about prefix
 				+ "(?<topic>[^/]+?)-" 			// assuming no / in topic names
@@ -137,14 +143,25 @@ public class BytesRecordReader {
 	 * @throws IOException
 	 */
 	public ConsumerRecord<byte[], byte[]> read(String topic, int partition, long offset, InputStream data) throws IOException {
-		// if at the end of the stream, return null
-		final Integer keySize = readLen(topic, partition, offset, data);
-		if (keySize == null) {
-			return null;
+		final byte[] key;
+		final int valSize;
+		if (includesKeys) {
+			// if at the end of the stream, return null
+			final Integer keySize = readLen(topic, partition, offset, data);
+			if (keySize == null) {
+				return null;
+			}
+			key = readBytes(keySize, data, topic, partition, offset);
+			valSize = readValueLen(topic, partition, offset, data);
+		} else {
+			key = null;
+			Integer vSize = readLen(topic, partition, offset, data);
+			if (vSize == null) {
+				return null;
+			}
+			valSize = vSize;
 		}
-		final byte[] key = readBytes(keySize, data, topic, partition, offset);
 
-		final int valSize = readValueLen(topic, partition, offset, data);
 		final byte[] value = readBytes(valSize, data, topic, partition, offset);
 
 		return new ConsumerRecord<>(topic, partition, offset, key, value);

@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.Serializable;
+import java.nio.charset.Charset;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,11 +17,15 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.kafka.connect.storage.Converter;
 import org.joda.time.LocalDate;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -36,7 +42,7 @@ import com.amazonaws.services.s3.model.S3ObjectSummary;
 import junit.framework.TestCase;
 
 /**
- * Covers S3 and reading raw byte records.
+ * Covers S3 and reading raw byte records. Closer to an integration test.
  */
 public class S3FilesReaderTest extends TestCase {
 
@@ -46,9 +52,60 @@ public class S3FilesReaderTest extends TestCase {
 
 		final AmazonS3 client = givenAMockS3Client(dir);
 
-		List<String> results = whenTheRecordsAreRead(client);
+		List<String> results = whenTheRecordsAreRead(client, true);
 
 		thenTheyAreFilteredAndInOrder(results);
+	}
+
+	public static class ReversedStringBytesConverter implements Converter {
+		@Override
+		public void configure(Map<String, ?> configs, boolean isKey) {
+			// while we're here, verify that we get our subconfig
+			assertEquals(configs.get("requiredProp"), "isPresent");
+		}
+
+		@Override
+		public byte[] fromConnectData(String topic, Schema schema, Object value) {
+			byte[] bytes = value.toString().getBytes(Charset.forName("UTF-8"));
+			byte[] result = new byte[bytes.length];
+			for (int i = 0; i < bytes.length; i++) {
+				result[bytes.length - i - 1] = bytes[i];
+			}
+			return result;
+		}
+
+		@Override
+		public SchemaAndValue toConnectData(String topic, byte[] value) {
+			throw new UnsupportedOperationException();
+		}
+	}
+
+	public void testReadingBytesFromS3_withoutKeysAndACustomConverter() throws IOException {
+		final Path dir = Files.createTempDirectory("s3FilesReaderTest");
+		givenSomeData(dir, null, givenACustomConverter(), Schema.STRING_SCHEMA);
+
+		final AmazonS3 client = givenAMockS3Client(dir);
+
+		List<String> results = whenTheRecordsAreRead(client, false);
+
+		theTheyAreReversedAndInOrder(results);
+	}
+
+	Converter givenACustomConverter() {
+		Map<String, Object> config = new HashMap<>();
+		config.put("converter", ByteLengthEncodedConverter.class.getName());
+		config.put("converter.converter", ReversedStringBytesConverter.class.getName());
+		config.put("converter.converter.requiredProp", "isPresent");
+		return S3SinkTask.buildConverter(config, "converter", false, null);
+	}
+
+	void theTheyAreReversedAndInOrder(List<String> results) {
+		List<String> expected = Arrays.asList(
+				"0-0eulav",
+				"0-1eulav",
+				"1-1eulav"
+		);
+		assertEquals(expected, results);
 	}
 
 	private void thenTheyAreFilteredAndInOrder(List<String> results) {
@@ -60,17 +117,18 @@ public class S3FilesReaderTest extends TestCase {
 		assertEquals(expected, results);
 	}
 
-	private List<String> whenTheRecordsAreRead(AmazonS3 client) {
+	private List<String> whenTheRecordsAreRead(AmazonS3 client, boolean fileIncludesKeys) {
 		S3FilesReader reader = new S3FilesReader(
 				"bucket",
 				"prefix",
 				client,
 				new LocalDate(2016, 1, 1),
-				1 // small to test pagination
+				1, // small to test pagination
+				fileIncludesKeys
 		);
 		List<String> results = new ArrayList<>();
 		for (ConsumerRecord<byte[], byte[]> record : reader) {
-			results.add(new String(record.key()) + "="  + new String(record.value()));
+			results.add((record.key() == null ? "" : new String(record.key()) + "=") + new String(record.value()));
 		}
 		return results;
 	}
@@ -143,18 +201,23 @@ public class S3FilesReaderTest extends TestCase {
 	}
 
 	private void givenSomeData(Path dir) throws IOException {
+		Converter valueConverter = S3SinkTask.buildConverter(new HashMap<String, Object>(), "missing", false, ByteLengthEncodedConverter.class);
+		givenSomeData(dir, valueConverter, valueConverter, Schema.BYTES_SCHEMA);
+	}
+
+	private void givenSomeData(Path dir, Converter keyConverter, Converter valueConverter, Schema valueSchema) throws IOException {
 		new File(dir.toFile(), "prefix/2015-12-31").mkdirs();
 		new File(dir.toFile(), "prefix/2016-01-01").mkdirs();
 		new File(dir.toFile(), "prefix/2016-01-02").mkdirs();
-		try (BlockGZIPRecordWriter writer0 = new BlockGZIPBytesWriter("topic-00000", dir.toString() + "/prefix/2015-12-31", 0, 512);
-			 BlockGZIPRecordWriter writer1 = new BlockGZIPBytesWriter("topic-00000", dir.toString() + "/prefix/2016-01-01", 0, 512);
-			 BlockGZIPRecordWriter writer2 = new BlockGZIPBytesWriter("topic-00001", dir.toString() + "/prefix/2016-01-02", 0, 512);
+		try (BlockGZIPFileWriter writer0 = new BlockGZIPFileWriter("topic-00000", dir.toString() + "/prefix/2015-12-31", 0, 512, keyConverter, valueConverter);
+			 BlockGZIPFileWriter writer1 = new BlockGZIPFileWriter("topic-00000", dir.toString() + "/prefix/2016-01-01", 0, 512, keyConverter, valueConverter);
+			 BlockGZIPFileWriter writer2 = new BlockGZIPFileWriter("topic-00001", dir.toString() + "/prefix/2016-01-02", 0, 512, keyConverter, valueConverter);
 		) {
 			writer0.write(new SinkRecord(
 					"topic",
 					0,
 					Schema.BYTES_SCHEMA, "willbe".getBytes(),
-					Schema.BYTES_SCHEMA, "skipped".getBytes(),
+					valueSchema, ser("skipped", valueSchema),
 					-1
 			));
 
@@ -162,7 +225,7 @@ public class S3FilesReaderTest extends TestCase {
 					"topic",
 					0,
 					Schema.BYTES_SCHEMA, "key0-0".getBytes(),
-					Schema.BYTES_SCHEMA, "value0-0".getBytes(),
+					valueSchema, ser("value0-0", valueSchema),
 					0
 			));
 
@@ -170,17 +233,22 @@ public class S3FilesReaderTest extends TestCase {
 					"topic",
 					1,
 					Schema.BYTES_SCHEMA, "key1-0".getBytes(),
-					Schema.BYTES_SCHEMA, "value1-0".getBytes(),
+					valueSchema, ser("value1-0", valueSchema),
 					0
 			));
 			writer2.write(new SinkRecord(
 					"topic",
 					1,
 					Schema.BYTES_SCHEMA, "key1-1".getBytes(),
-					Schema.BYTES_SCHEMA, "value1-1".getBytes(),
+					valueSchema, ser("value1-1", valueSchema),
 					1
 			));
 		}
+	}
+
+	private Object ser(String s, Schema valueSchema) {
+		return valueSchema == Schema.BYTES_SCHEMA ?
+			s.getBytes() : s;
 	}
 
 }

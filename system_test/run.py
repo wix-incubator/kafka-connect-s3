@@ -155,7 +155,7 @@ def runS3ConnectStandalone(worker_props ='system-test-worker.properties', sink_p
     global g_s3connect_proc
     version = connect_version()
     env = {
-        'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-{}.jar'.format(version))
+        'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-{}-shaded.jar'.format(version))
     }
     if debug:
         env['KAFKA_JMX_OPTS'] = '-agentlib:jdwp=transport=dt_socket,server=y,address=8000,suspend=y'
@@ -340,9 +340,12 @@ class TestConnectS3(unittest.TestCase):
         global g_producer
         topic = "binary-system-test"
 
-        # delete the topic before we start so we don't get extra messages
-        sys.stderr.write(subprocess.check_output([os.path.join(this_dir, 'standalone-kafka/kafka/bin/kafka-topics.sh'),
-                         '--zookeeper', 'localhost:2181', '--delete', '--topic', topic]))
+        try:
+            # delete the topic before we start so we don't get extra messages
+            sys.stderr.write(subprocess.check_output([os.path.join(this_dir, 'standalone-kafka/kafka/bin/kafka-topics.sh'),
+                             '--zookeeper', 'localhost:2181', '--delete', '--topic', topic]))
+        except subprocess.CalledProcessError:
+            sys.stderr.write("topic does not exist")
 
         debug=False
         s3connect = runS3ConnectStandalone(
@@ -370,7 +373,7 @@ class TestConnectS3(unittest.TestCase):
         # run the reader to dump what we just wrote
         version = connect_version()
         env = {
-            'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-{}.jar'.format(version))
+            'CLASSPATH': os.path.join(this_dir, '../target/kafka-connect-s3-{}-shaded.jar'.format(version))
         }
         cmd = [os.path.join(this_dir, 'standalone-kafka/kafka/bin/kafka-run-class.sh'),
                "com.deviantart.kafka_connect_s3.S3FilesReader",

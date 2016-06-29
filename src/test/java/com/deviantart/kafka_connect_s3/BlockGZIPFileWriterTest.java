@@ -13,16 +13,18 @@ import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
 import java.util.zip.GZIPInputStream;
 
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.sink.SinkRecord;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
-public class BlockGZIPStringWriterTest extends TestCase {
+public class BlockGZIPFileWriterTest extends TestCase {
 
   private String tmpDirPrefix = "BlockGZIPFileWriterTest";
   private String tmpDir;
 
-  public BlockGZIPStringWriterTest(String testName) {
+  public BlockGZIPFileWriterTest(String testName) {
     super(testName);
 
     String tempDir = System.getProperty("java.io.tmpdir");
@@ -35,7 +37,7 @@ public class BlockGZIPStringWriterTest extends TestCase {
    * @return the suite of tests being tested
    */
   public static Test suite() {
-    return new TestSuite(BlockGZIPStringWriterTest.class);
+    return new TestSuite(BlockGZIPFileWriterTest.class);
   }
 
   @Override
@@ -48,12 +50,12 @@ public class BlockGZIPStringWriterTest extends TestCase {
   }
 
   public void testPaths() throws Exception {
-    BlockGZIPRecordWriter w = new BlockGZIPStringWriter("foo", tmpDir);
+    BlockGZIPFileWriter w = new BlockGZIPFileWriter("foo", tmpDir);
     assertEquals(tmpDir + "/foo-000000000000.gz", w.getDataFilePath());
     assertEquals(tmpDir + "/foo-000000000000.index.json", w.getIndexFilePath());
 
 
-    BlockGZIPRecordWriter w2 = new BlockGZIPStringWriter("foo", tmpDir, 123456);
+    BlockGZIPFileWriter w2 = new BlockGZIPFileWriter("foo", tmpDir, 123456);
     assertEquals(tmpDir + "/foo-000000123456.gz", w2.getDataFilePath());
     assertEquals(tmpDir + "/foo-000000123456.index.json", w2.getIndexFilePath());
   }
@@ -64,7 +66,7 @@ public class BlockGZIPStringWriterTest extends TestCase {
     + "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
     // Make a writer with artificially small chunk threshold of 1kb
-    BlockGZIPStringWriter w = new BlockGZIPStringWriter("write-test", tmpDir, 987654321, 1000);
+    BlockGZIPFileWriter w = new BlockGZIPFileWriter("write-test", tmpDir, 987654321, 1000);
 
     int totalUncompressedBytes = 0;
     String[] expectedLines = new String[50];
@@ -79,7 +81,7 @@ public class BlockGZIPStringWriterTest extends TestCase {
       if (i % 2 == 0) {
         line += "\n";
       }
-      w.write(line);
+      w.write(toRecord(line));
     }
 
     assertEquals(totalUncompressedBytes, w.getTotalUncompressedSize());
@@ -90,6 +92,18 @@ public class BlockGZIPStringWriterTest extends TestCase {
 
     verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
     verifyIndexFile(w, 987654321, expectedLines);
+  }
+
+  static SinkRecord toRecord(String line) {
+    return new SinkRecord(
+            "topicIgnored",
+            0,
+            null,
+            null,
+            Schema.STRING_SCHEMA,
+            line,
+            123 // not important
+    );
   }
 
   private void verifyOutputIsSaneGZIPFile(String filename, String[] expectedRecords) throws Exception {
@@ -108,7 +122,7 @@ public class BlockGZIPStringWriterTest extends TestCase {
     }
   }
 
-  private void verifyIndexFile(BlockGZIPStringWriter w, int startOffset, String[] expectedRecords) throws Exception {
+  private void verifyIndexFile(BlockGZIPFileWriter w, int startOffset, String[] expectedRecords) throws Exception {
     JSONParser parser = new JSONParser();
 
     Object obj = parser.parse(new FileReader(w.getIndexFilePath()));
@@ -171,14 +185,14 @@ public class BlockGZIPStringWriterTest extends TestCase {
   public void testShouldOverwrite() throws Exception {
     // Make writer and write to it a bit.
     {
-      BlockGZIPStringWriter w = new BlockGZIPStringWriter("overwrite-test", tmpDir);
+      BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
 
       // Write at least a few 4k blocks to disk so we can be sure that we don't
       // only overwrite the first block.
       String[] expectedLines = new String[5000];
       for (int i = 0; i < 5000; i++) {
         String line = String.format("Record %d", i);
-        w.write(line);
+        w.write(toRecord(line));
         expectedLines[i] = line;
       }
 
@@ -194,13 +208,13 @@ public class BlockGZIPStringWriterTest extends TestCase {
 
     {
       // Now make a whole new writer for same chunk
-      BlockGZIPStringWriter w = new BlockGZIPStringWriter("overwrite-test", tmpDir);
+      BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
 
       // Only write a few lines
       String[] expectedLines2 = new String[10];
       for (int i = 0; i < 10; i++) {
         String line = String.format("Overwrite record %d", i);
-        w.write(line);
+        w.write(toRecord(line));
         expectedLines2[i] = line;
       }
 
@@ -216,12 +230,12 @@ public class BlockGZIPStringWriterTest extends TestCase {
 
   public void testDelete() throws Exception {
     // Make writer and write to it a bit.
-    BlockGZIPStringWriter w = new BlockGZIPStringWriter("overwrite-test", tmpDir);
+    BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
 
     String[] expectedLines = new String[5000];
     for (int i = 0; i < 5000; i++) {
       String line = String.format("Record %d", i);
-      w.write(line);
+      w.write(toRecord(line));
       expectedLines[i] = line;
     }
 

@@ -4,20 +4,22 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
 
-import java.util.Collections;
 import java.util.HashMap;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
+import org.apache.kafka.connect.storage.Converter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -26,15 +28,18 @@ import java.util.Set;
 public class S3SinkTask extends SinkTask {
 
   private static final Logger log = LoggerFactory.getLogger(S3SinkTask.class);
-  private static final String BYTES_CONVERTER = BytesConverter.class.getName();
 
   private Map<String, String> config;
 
-  private Map<TopicPartition, BlockGZIPRecordWriter> tmpFiles;
+  private Map<TopicPartition, BlockGZIPFileWriter> tmpFiles;
 
   private long GZIPChunkThreshold = 67108864;
 
   private S3Writer s3;
+
+  private Converter keyConverter;
+
+  private Converter valueConverter;
 
   public S3SinkTask() {
     tmpFiles = new HashMap<>();
@@ -56,6 +61,10 @@ public class S3SinkTask extends SinkTask {
         // keep default
       }
     }
+
+    keyConverter   = buildConverter(props, "key.converter",   true,  null);
+    valueConverter = buildConverter(props, "value.converter", false, ToStringWithDelimiterConverter.class);
+
     String bucket = config.get("s3.bucket");
     String prefix = config.get("s3.prefix");
     if (bucket == null || Objects.equals(bucket, "")) {
@@ -71,6 +80,80 @@ public class S3SinkTask extends SinkTask {
     // Recover initial assignments
     Set<TopicPartition> assignment = context.assignment();
     recoverAssignment(assignment);
+  }
+
+  /**
+   * Create and configure a new Converter instance.
+   *
+   * @param props the raw config values.
+   * @param classNameProp the name of the property that specifies the converter class.
+   *                      Any sub properties will be passed to the converter as config.
+   * @param isKey if this converter is for a key or not.
+   * @param defaultConverterClass the default converter class to create and configure if the prop is missing.
+   *                              If null, the result may be null.
+   * @return a new converter, already configured.
+   */
+  static Converter buildConverter(Map<String, ?> props, String classNameProp, boolean isKey, Class<? extends Converter> defaultConverterClass) {
+    String className = (String) props.get(classNameProp);
+
+    try {
+      Converter converter;
+
+      if (className == null) {
+        if (defaultConverterClass == null) {
+          return null;
+        } else {
+          converter = defaultConverterClass.newInstance();
+        }
+      } else {
+        converter = (Converter) Class.forName(className).newInstance();
+      }
+
+      if (converter instanceof Configurable) {
+		((Configurable) converter).configure(props);
+	  }
+
+      // grab any properties intended for the converter
+      Map<String, Object> subKeys = new LinkedHashMap<>();
+      String prefix = classNameProp + ".";
+      for (String p : props.keySet()) {
+		if (p.startsWith(prefix)) {
+		  subKeys.put(p.substring(prefix.length()), props.get(p));
+		}
+	  }
+
+      converter.configure(subKeys, isKey);
+
+      return converter;
+    } catch (Exception e) {
+      throw new IllegalArgumentException("Could not create S3 converter for props " + classNameProp + " isKey=" + isKey);
+    }
+  }
+
+  private static void configureConverter(Map<String, ?> props, String prefixProp, boolean isKey, Converter converter) {
+    if (converter instanceof Configurable) {
+	  ((Configurable) converter).configure(props);
+	}
+
+    // grab any properties intended for the converter
+    Map<String, Object> subKeys = new LinkedHashMap<>();
+    String prefix = prefixProp + ".";
+    for (String p : props.keySet()) {
+	  if (p.startsWith(prefix)) {
+		subKeys.put(p.substring(prefix.length()), props.get(p));
+	  }
+	}
+
+    converter.configure(subKeys, isKey);
+  }
+
+  private String firstPresent(Map<String, String> props, String... keys) {
+    for (String key : keys) {
+      if (props.containsKey(key)) {
+        return props.get(key);
+      }
+    }
+    return null;
   }
 
   static AmazonS3 s3client(Map<String, String> config) {
@@ -102,7 +185,7 @@ public class S3SinkTask extends SinkTask {
         String topic = record.topic();
         int partition = record.kafkaPartition();
         TopicPartition tp = new TopicPartition(topic, partition);
-        BlockGZIPRecordWriter buffer = tmpFiles.get(tp);
+        BlockGZIPFileWriter buffer = tmpFiles.get(tp);
         if (buffer == null) {
           log.error("Trying to put {} records to partition {} which doesn't exist yet", records.size(), tp);
           throw new ConnectException("Trying to put records for a topic partition that has not be assigned");
@@ -121,9 +204,9 @@ public class S3SinkTask extends SinkTask {
     // https://twitter.com/mr_paul_banks/status/702493772983177218
 
     // Instead iterate over the writers we do have and get the offsets directly from them.
-    for (Map.Entry<TopicPartition, BlockGZIPRecordWriter> entry : tmpFiles.entrySet()) {
+    for (Map.Entry<TopicPartition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
       TopicPartition tp = entry.getKey();
-      BlockGZIPRecordWriter writer = entry.getValue();
+      BlockGZIPFileWriter writer = entry.getValue();
       if (writer.getNumRecords() == 0) {
         // Not done anything yet
         log.info("No new records for partition {}", tp);
@@ -145,19 +228,13 @@ public class S3SinkTask extends SinkTask {
     }
   }
 
-  private BlockGZIPRecordWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
+  private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
     String name = String.format("%s-%05d", tp.topic(), tp.partition());
     String path = config.get("local.buffer.dir");
     if (path == null) {
       throw new ConnectException("No local buffer file path configured");
     }
-    return isBinary()
-            ? new BlockGZIPBytesWriter(name, path, nextOffset, this.GZIPChunkThreshold)
-            : new BlockGZIPStringWriter(name, path, nextOffset, this.GZIPChunkThreshold);
-  }
-
-  private boolean isBinary() {
-    return Boolean.valueOf(config.get("s3.binary.format"));
+    return new BlockGZIPFileWriter(name, path, nextOffset, this.GZIPChunkThreshold, keyConverter, valueConverter);
   }
 
   @Override
@@ -169,7 +246,7 @@ public class S3SinkTask extends SinkTask {
   public void onPartitionsRevoked(Collection<TopicPartition> partitions) throws ConnectException {
     for (TopicPartition tp : partitions) {
       // See if this is a new assignment
-      BlockGZIPRecordWriter writer = this.tmpFiles.remove(tp);
+      BlockGZIPFileWriter writer = this.tmpFiles.remove(tp);
       if (writer != null) {
         log.info("Revoked partition {} deleting buffer", tp);
         try {
@@ -204,7 +281,7 @@ public class S3SinkTask extends SinkTask {
 
     log.info("Recovering partition {} from offset {}", tp, offset);
 
-    BlockGZIPRecordWriter w = createNextBlockWriter(tp, offset);
+    BlockGZIPFileWriter w = createNextBlockWriter(tp, offset);
     tmpFiles.put(tp, w);
 
     this.context.offset(tp, offset);
