@@ -121,16 +121,16 @@ To get binary output, you'll need to configure your Connect cluster to use raw b
 
 connect-worker.properties:
 ```
-key.converter=com.deviantart.kafka_connect_s3.BytesConverter
-value.converter=com.deviantart.kafka_connect_s3.BytesConverter
+key.converter=com.deviantart.kafka_connect_s3.ByteLengthEncodedConverter
+value.converter=com.deviantart.kafka_connect_s3.ByteLengthEncodedConverter
 ```
 
 connect-s3-sink.properties:
 
 ```
 # if you don't want keys, remove the key.converter line from the sink properties
-key.converter=com.deviantart.kafka_connect_s3.BytesConverter
-value.converter=com.deviantart.kafka_connect_s3.BytesConverter
+key.converter=com.deviantart.kafka_connect_s3.ByteLengthEncodedConverter
+value.converter=com.deviantart.kafka_connect_s3.ByteLengthEncodedConverter
 ```
 
 Note that both files need the converters to be specified.
@@ -158,10 +158,10 @@ value.converter.config.value=something
 connect-s3-sink.properties:
 
 ```
-key.converter=com.deviantart.kafka_connect_s3.BytesConverter
+key.converter=com.deviantart.kafka_connect_s3.ByteLengthEncodedConverter
 key.converter.converter=key.converter=com.whatever.Converter
 
-value.converter=com.deviantart.kafka_connect_s3.BytesConverter
+value.converter=com.deviantart.kafka_connect_s3.ByteLengthEncodedConverter
 value.converter.converter=com.whatever.OtherConverter
 value.converter.converter.config.value=something
 ```
@@ -169,7 +169,7 @@ value.converter.converter.config.value=something
 #### Custom Output Format
 
 It is possible to fully customize your output needs with custom key and value
-converters. Instead of `BytesConverter` you may specify your own converter class
+converters. Instead of `ByteLengthEncodedConverter` you may specify your own converter class
 and produce whatever byte output you desire.
 
 NOTE: `BytesRecordReader` and `S3FilesReader` will only work with records where the keys and values are
