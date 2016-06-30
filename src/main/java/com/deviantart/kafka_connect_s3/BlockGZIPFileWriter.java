@@ -128,7 +128,11 @@ public class BlockGZIPFileWriter implements Closeable {
     // Explicitly truncate the file. On linux and OS X this appears to happen
     // anyway when opening with FileOutputStream but that behavior is not actually documented
     // or specified anywhere so let's be rigorous about it.
-    FileOutputStream fos = new FileOutputStream(new File(getDataFilePath()));
+    File file = new File(getDataFilePath());
+    if (!file.getParentFile().exists() && !file.getParentFile().mkdirs()) {
+      throw new IllegalArgumentException("could not create file " + file);
+    }
+    FileOutputStream fos = new FileOutputStream(file);
     fos.getChannel().truncate(0);
 
     // Open file for writing and setup
@@ -250,7 +254,11 @@ public class BlockGZIPFileWriter implements Closeable {
     JSONObject index = new JSONObject();
     index.put("chunks", chunkArr);
 
-    try (FileWriter file = new FileWriter(getIndexFilePath())) {
+    File indexFile = new File(getIndexFilePath());
+    if (!indexFile.getParentFile().exists() && !indexFile.getParentFile().mkdirs()) {
+      throw new IllegalArgumentException("Cannot create index " + indexFile);
+    }
+    try (FileWriter file = new FileWriter(indexFile)) {
       file.write(index.toJSONString());
       file.close();
     }
