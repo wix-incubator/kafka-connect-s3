@@ -48,7 +48,7 @@ public class S3SinkTask extends SinkTask {
   public void start(Map<String, String> props) throws ConnectException {
     config = props;
     String chunkThreshold = config.get("compressed_block_size");
-    if (chunkThreshold == null) {
+    if (chunkThreshold != null) {
       try {
         this.GZIPChunkThreshold = Long.parseLong(chunkThreshold);
       } catch (NumberFormatException nfe) {
