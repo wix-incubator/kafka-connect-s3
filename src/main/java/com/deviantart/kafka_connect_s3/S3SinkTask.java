@@ -1,5 +1,6 @@
 package com.deviantart.kafka_connect_s3;
 
+import com.amazonaws.ClientConfiguration;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
@@ -57,6 +58,8 @@ public class S3SinkTask extends SinkTask {
     }
     String bucket = config.get("s3.bucket");
     String prefix = config.get("s3.prefix");
+    String proxyHost = config.get("aws.config.proxy.host");
+    String proxyPort = config.get("aws.config.proxy.port");
     if (bucket == null || bucket == "") {
       throw new ConnectException("S3 bucket must be configured");
     }
@@ -65,7 +68,18 @@ public class S3SinkTask extends SinkTask {
     }
 
     // Use default credentials provider that looks in Env + Java properties + profile + instance role
-    AmazonS3 s3Client = new AmazonS3Client();
+    AmazonS3 s3Client = null;
+    if(proxyHost == null || proxyHost == "") {
+      log.info("No proxy configuration found");
+      s3Client = new AmazonS3Client();
+      //Use custom configuration to support proxy.
+    }else{
+      log.info("Proxy configuration found");
+      ClientConfiguration clientConfig = new ClientConfiguration();
+      clientConfig.setProxyHost(proxyHost);
+      clientConfig.setProxyPort(Integer.parseInt(proxyPort));
+      s3Client = new AmazonS3Client(clientConfig);
+    }
 
     // If worker config sets explicit endpoint override (e.g. for testing) use that
     String s3Endpoint = config.get("s3.endpoint");
