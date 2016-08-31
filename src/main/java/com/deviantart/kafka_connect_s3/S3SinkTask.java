@@ -3,8 +3,6 @@ package com.deviantart.kafka_connect_s3;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
-
-import java.util.HashMap;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -16,9 +14,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.Collection;
-import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -77,7 +74,7 @@ public class S3SinkTask extends SinkTask {
       s3Client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
     }
 
-    s3 = new S3Writer(bucket, prefix, s3Client);
+    s3 = new S3Writer(bucket, prefix, s3Client, config);
 
     // Recover initial assignments
     Set<TopicPartition> assignment = context.assignment();
