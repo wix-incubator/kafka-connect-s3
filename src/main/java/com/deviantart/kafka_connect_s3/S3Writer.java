@@ -171,9 +171,9 @@ public class S3Writer {
           throws IOException {
     PutObjectRequest req = request.clone();
     try {
-      Boolean s3EnableSse = Boolean.parseBoolean(config.get("s3.enableSse"));
+      Boolean s3EnableSse = Boolean.parseBoolean(config.get(S3SinkConnectorConstants.S3_ENABLE_SSE_CONFIG));
       if (s3EnableSse) {
-        String s3KmsKeyId = config.get("s3.kmsKeyId");
+        String s3KmsKeyId = config.get(S3SinkConnectorConstants.S3_KMS_KEY_ID_CONFIG);
         req.setSSEAwsKeyManagementParams(new SSEAwsKeyManagementParams(s3KmsKeyId));
       }
       return req;
