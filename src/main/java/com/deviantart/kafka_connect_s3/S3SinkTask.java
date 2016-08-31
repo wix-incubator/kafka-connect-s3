@@ -1,5 +1,7 @@
 package com.deviantart.kafka_connect_s3;
 
+import com.amazonaws.regions.Region;
+import com.amazonaws.regions.RegionUtils;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
@@ -61,8 +63,11 @@ public class S3SinkTask extends SinkTask {
       prefix = "";
     }
 
+    String s3Region = config.get("s3.region");
+    Region region = RegionUtils.getRegion(s3Region);
+
     // Use default credentials provider that looks in Env + Java properties + profile + instance role
-    AmazonS3 s3Client = new AmazonS3Client();
+    AmazonS3 s3Client = new AmazonS3Client().withRegion(region);
 
     // If worker config sets explicit endpoint override (e.g. for testing) use that
     String s3Endpoint = config.get("s3.endpoint");
