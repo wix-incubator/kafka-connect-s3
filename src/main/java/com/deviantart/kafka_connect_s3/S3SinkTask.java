@@ -3,8 +3,6 @@ package com.deviantart.kafka_connect_s3;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
-
-import java.util.HashMap;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -16,9 +14,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.Collection;
-import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -74,7 +71,7 @@ public class S3SinkTask extends SinkTask {
     }
     Boolean s3PathStyle = Boolean.parseBoolean(config.get("s3.path_style"));
     if (s3PathStyle) {
-      s3Client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
+      s3Client.setS3ClientOptions(S3ClientOptions.builder().setPathStyleAccess(true).build());
     }
 
     s3 = new S3Writer(bucket, prefix, s3Client);
@@ -151,12 +148,12 @@ public class S3SinkTask extends SinkTask {
   }
 
   @Override
-  public void onPartitionsAssigned(Collection<TopicPartition> partitions) throws ConnectException {
+  public void open(Collection<TopicPartition> partitions) throws ConnectException {
     recoverAssignment(partitions);
   }
 
   @Override
-  public void onPartitionsRevoked(Collection<TopicPartition> partitions) throws ConnectException {
+  public void close(Collection<TopicPartition> partitions) throws ConnectException {
     for (TopicPartition tp : partitions) {
       // See if this is a new assignment
       BlockGZIPFileWriter writer = this.tmpFiles.remove(tp);
