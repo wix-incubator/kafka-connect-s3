@@ -143,6 +143,7 @@ public class S3Writer {
   private String getChunkFileKey(String localFilePath) {
     Path p = Paths.get(localFilePath);
     SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
+    //TODO: get partitioner from configuration
     return String.format("%s%s/%s", keyPrefix, df.format(new Date()), p.getFileName().toString());
   }
 

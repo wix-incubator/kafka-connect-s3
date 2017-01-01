@@ -3,6 +3,9 @@ package com.deviantart.kafka_connect_s3;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
+import com.deviantart.kafka_connect_s3.parser.JsonRecordParser;
+import com.deviantart.kafka_connect_s3.partition.CustomDateFormatPartition;
+import com.deviantart.kafka_connect_s3.partition.TopicPartitionKey;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -15,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -26,7 +30,7 @@ public class S3SinkTask extends SinkTask {
 
   private Map<String, String> config;
 
-  private Map<TopicPartition, BlockGZIPFileWriter> tmpFiles;
+  private Map<CustomDateFormatPartition, BlockGZIPFileWriter> tmpFiles;
 
   private long GZIPChunkThreshold = 67108864;
 
@@ -92,30 +96,33 @@ public class S3SinkTask extends SinkTask {
   public void put(Collection<SinkRecord> records) throws ConnectException {
     for (SinkRecord record : records) {
       try {
-        String topic = record.topic();
-        int partition = record.kafkaPartition();
-        TopicPartition tp = new TopicPartition(topic, partition);
-        BlockGZIPFileWriter buffer = tmpFiles.get(tp);
+
+        Date recordTime = new JsonRecordParser().getDateField((String)record.value(), "event_time", "\"yyyy-MM-dd HH:mm:ss\"");
+        CustomDateFormatPartition cdfp = new CustomDateFormatPartition(record,"yyyy-MM-dd HH:mm:ss", recordTime);
+        //TopicPartition tp = new TopicPartition(topic, partition);
+        BlockGZIPFileWriter buffer = tmpFiles.get(cdfp);
         if (buffer == null) {
-          log.error("Trying to put {} records to partition {} which doesn't exist yet", records.size(), tp);
+          log.error("Trying to put {} records to partition {} which doesn't exist yet", records.size(), cdfp);
           throw new ConnectException("Trying to put records for a topic partition that has not be assigned");
         }
         buffer.write(record.value().toString());
       } catch (IOException e) {
         throw new RetriableException("Failed to write to buffer", e);
+      } catch (Exception e) {
+        e.printStackTrace();
       }
     }
   }
 
   @Override
-  public void flush(Map<TopicPartition, OffsetAndMetadata> offsets) throws ConnectException {
+  public void flush(Map<CustomDateFormatPartition, OffsetAndMetadata> offsets) throws ConnectException {
     // Don't rely on offsets passed. They have some quirks like including topic partitions that just
     // got revoked (i.e. we have deleted the writer already). Not sure if this is intended...
     // https://twitter.com/mr_paul_banks/status/702493772983177218
 
     // Instead iterate over the writers we do have and get the offsets directly from them.
-    for (Map.Entry<TopicPartition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
-      TopicPartition tp = entry.getKey();
+    for (Map.Entry<CustomDateFormatPartition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
+      CustomDateFormatPartition tp = entry.getKey();
       BlockGZIPFileWriter writer = entry.getValue();
       if (writer.getNumRecords() == 0) {
         // Not done anything yet
