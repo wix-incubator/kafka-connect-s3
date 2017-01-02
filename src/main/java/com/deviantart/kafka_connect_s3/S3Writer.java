@@ -9,22 +9,22 @@ import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
+import com.deviantart.kafka_connect_s3.partition.S3Partition;
 import org.apache.kafka.common.TopicPartition;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
 
 /**
@@ -35,6 +35,7 @@ import java.util.Date;
  * but for now it's just to keep things simpler to test.
  */
 public class S3Writer {
+  private static final Logger log = LoggerFactory.getLogger(S3Writer.class);
   private String keyPrefix;
   private String bucket;
   private AmazonS3 s3Client;
@@ -58,35 +59,37 @@ public class S3Writer {
     this.tm = tm;
   }
 
-  public long putChunk(String localDataFile, String localIndexFile, TopicPartition tp) throws IOException {
+  public void putChunk(String localDataFile, String localIndexFile, S3Partition tpKey) throws IOException {
     // Put data file then index, then finally update/create the last_index_file marker
-    String dataFileKey = this.getChunkFileKey(localDataFile);
-    String idxFileKey = this.getChunkFileKey(localIndexFile);
+    String dataFileKey = this.getChunkDataFileKey(localDataFile,tpKey);
+    String idxFileKey = this.getChunkIndexFileKey(localIndexFile,tpKey);
     // Read offset first since we'll delete the file after upload
-    long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
+    //long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
 
     try {
+      log.debug("Uploading file {} to {} {}",localDataFile,dataFileKey,bucket);
       Upload upload = tm.upload(this.bucket, dataFileKey, new File(localDataFile));
       upload.waitForCompletion();
+      log.debug("Uploading file {} to {} {}",localIndexFile,idxFileKey,bucket);
       upload = tm.upload(this.bucket, idxFileKey, new File(localIndexFile));
       upload.waitForCompletion();
     } catch (Exception e) {
+      e.printStackTrace();
       throw new IOException("Failed to upload to S3", e);
     }
 
-    this.updateCursorFile(idxFileKey, tp);
 
     // Sanity check - return what the new nextOffset will be based on the index we just uploaded
-    return nextOffset;
+    //return nextOffset;
   }
 
   public long fetchOffset(TopicPartition tp) throws IOException {
 
-    // See if cursor file exists
-    String indexFileKey;
+    long nextOffset;
 
+    // See if cursor file exists
     try (
-      S3Object cursorObj = s3Client.getObject(this.bucket, this.getTopicPartitionLastIndexFileKey(tp));
+      S3Object cursorObj = s3Client.getObject(this.bucket, this.getTopicPartitionCursorFile(tp));
       InputStreamReader input = new InputStreamReader(cursorObj.getObjectContent(), "UTF-8");
     ) {
       StringBuilder sb = new StringBuilder(1024);
@@ -97,7 +100,9 @@ public class S3Writer {
               read = input.read(buffer, 0, buffer.length)) {
         sb.append(buffer, 0, read);
       }
-      indexFileKey = sb.toString();
+      nextOffset = Long.parseLong(sb.toString());
+      return nextOffset;
+
     } catch (AmazonS3Exception ase) {
       if (ase.getStatusCode() == 404) {
         // Topic partition has no data in S3, start from beginning
@@ -107,16 +112,6 @@ public class S3Writer {
       }
     } catch (Exception e) {
       throw new IOException("Failed to fetch or read cursor file", e);
-    }
-
-    // Now fetch last written index file...
-    try (
-      S3Object indexObj = s3Client.getObject(this.bucket, indexFileKey);
-      InputStreamReader isr = new InputStreamReader(indexObj.getObjectContent(), "UTF-8");
-    ) {
-      return getNextOffsetFromIndexFileContents(isr);
-    } catch (Exception e) {
-      throw new IOException("Failed to fetch or parse last index file", e);
     }
   }
 
@@ -138,27 +133,29 @@ public class S3Writer {
     }
   }
 
-  // We store chunk files with a date prefix just to make finding them and navigating around the bucket a bit easier
-  // date is meaningless other than "when this was uploaded"
-  private String getChunkFileKey(String localFilePath) {
-    Path p = Paths.get(localFilePath);
-    SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-    //TODO: get partitioner from configuration
-    return String.format("%s%s/%s", keyPrefix, df.format(new Date()), p.getFileName().toString());
+  // return the filename and S3 full path using keyPrefix and S3Partition logic
+  private String getChunkDataFileKey(String localDatafile, S3Partition tpKey) {
+    Path p = Paths.get(localDatafile);
+    return String.format("%s%s%s", keyPrefix, tpKey.getDataDirectory(), p.getFileName().toString());
   }
 
-  private String getTopicPartitionLastIndexFileKey(TopicPartition tp) {
-    return String.format("%slast_chunk_index.%s-%05d.txt", this.keyPrefix, tp.topic(), tp.partition());
+  private String getChunkIndexFileKey(String localIndexFile, S3Partition tpKey) {
+    Path p = Paths.get(localIndexFile);
+    return String.format("%s%s%s", keyPrefix, tpKey.getIndexDirectory(), p.getFileName().toString());
   }
 
-  private void updateCursorFile(String lastIndexFileKey, TopicPartition tp) throws IOException {
+  private String getTopicPartitionCursorFile(TopicPartition tp) {
+    return String.format("%slast_chunk_index.%s-%05d.txt", keyPrefix, tp.topic(), tp.partition());
+  }
+
+  public void updateCursorFile(TopicPartition topicPartition, Long nextOffset) throws IOException {
     try
     {
-      byte[] contentAsBytes = lastIndexFileKey.getBytes("UTF-8");
+      byte[] contentAsBytes = nextOffset.toString().getBytes("UTF-8");
       ByteArrayInputStream contentsAsStream = new ByteArrayInputStream(contentAsBytes);
       ObjectMetadata md = new ObjectMetadata();
       md.setContentLength(contentAsBytes.length);
-      s3Client.putObject(new PutObjectRequest(this.bucket, this.getTopicPartitionLastIndexFileKey(tp),
+      s3Client.putObject(new PutObjectRequest(this.bucket, getTopicPartitionCursorFile(topicPartition),
         contentsAsStream, md));
     }
     catch(Exception ex)

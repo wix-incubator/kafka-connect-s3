@@ -1,16 +1,20 @@
 package com.deviantart.kafka_connect_s3.partition;
 
+import org.apache.kafka.connect.data.Date;
 import org.apache.kafka.connect.sink.SinkRecord;
+
+import java.text.SimpleDateFormat;
+import java.util.Map;
 
 /**
  * Created by or on 27/12/16.
  */
-public abstract class TopicPartitionKey {
+public abstract class S3Partition {
     private final String topic;
     private final Integer partition;
     private int hash = 0;
 
-    public TopicPartitionKey(SinkRecord record) {
+    public S3Partition(SinkRecord record, Map<String,String> props) {
         this.topic = record.topic();
         this.partition = record.kafkaPartition();
     }
@@ -44,7 +48,7 @@ public abstract class TopicPartitionKey {
         } else if(this.getClass() != obj.getClass()) {
             return false;
         } else {
-            TopicPartitionKey other = (TopicPartitionKey)obj;
+            S3Partition other = (S3Partition)obj;
             if(this.partition != other.partition) {
                 return false;
             } else {
@@ -64,4 +68,26 @@ public abstract class TopicPartitionKey {
     public String toString() {
         return this.topic + "-" + this.partition;
     }
+
+    public String getDataDirectory(){
+        //Simple partitioning by upload date
+        SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
+        return String.format("%s/", df.format(new Date()));
+    }
+
+    public String getIndexDirectory(){
+        //Simple partitioning by upload date
+        SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
+        return String.format("%s/", df.format(new Date()));
+    }
+
+    public String getDataFileName(){
+        return String.format("%s-%05d", this.topic, this.partition);
+    }
+
+    public String getIndexFileName(){
+        return String.format("%s-%05d.index.json", this.topic, this.partition);
+    }
+
+
 }

@@ -4,18 +4,17 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
 import com.deviantart.kafka_connect_s3.parser.JsonRecordParser;
-import com.deviantart.kafka_connect_s3.partition.CustomDateFormatPartition;
-import com.deviantart.kafka_connect_s3.partition.TopicPartitionKey;
+import com.deviantart.kafka_connect_s3.partition.CustomDateFormatS3Partition;
+import com.deviantart.kafka_connect_s3.partition.S3Partition;
+import com.deviantart.kafka_connect_s3.partition.TopicPartitionFiles;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.ConnectException;
-import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Date;
@@ -30,14 +29,14 @@ public class S3SinkTask extends SinkTask {
 
   private Map<String, String> config;
 
-  private Map<CustomDateFormatPartition, BlockGZIPFileWriter> tmpFiles;
+  private Map<TopicPartition, TopicPartitionFiles> topicPartitionFilesMap;
 
   private long GZIPChunkThreshold = 67108864;
 
   private S3Writer s3;
 
   public S3SinkTask() {
-    tmpFiles = new HashMap<>();
+    topicPartitionFilesMap = new HashMap<>();
   }
 
   @Override
@@ -96,18 +95,16 @@ public class S3SinkTask extends SinkTask {
   public void put(Collection<SinkRecord> records) throws ConnectException {
     for (SinkRecord record : records) {
       try {
+            String topic = record.topic();
+            int partition = record.kafkaPartition();
+            TopicPartition tp = new TopicPartition(topic, partition);
 
-        Date recordTime = new JsonRecordParser().getDateField((String)record.value(), "event_time", "\"yyyy-MM-dd HH:mm:ss\"");
-        CustomDateFormatPartition cdfp = new CustomDateFormatPartition(record,"yyyy-MM-dd HH:mm:ss", recordTime);
-        //TopicPartition tp = new TopicPartition(topic, partition);
-        BlockGZIPFileWriter buffer = tmpFiles.get(cdfp);
-        if (buffer == null) {
-          log.error("Trying to put {} records to partition {} which doesn't exist yet", records.size(), cdfp);
-          throw new ConnectException("Trying to put records for a topic partition that has not be assigned");
-        }
-        buffer.write(record.value().toString());
-      } catch (IOException e) {
-        throw new RetriableException("Failed to write to buffer", e);
+            //Get partitioning info from configurations
+            S3Partition s3Partition = (S3Partition)Class.forName(config.get("s3.partition.class"))
+                                                    .getConstructor(SinkRecord.class,Map.class)
+                                                    .newInstance(record,config);
+
+            topicPartitionFilesMap.get(tp).putRecord(s3Partition,record.kafkaOffset(),record.value().toString());
       } catch (Exception e) {
         e.printStackTrace();
       }
@@ -115,43 +112,15 @@ public class S3SinkTask extends SinkTask {
   }
 
   @Override
-  public void flush(Map<CustomDateFormatPartition, OffsetAndMetadata> offsets) throws ConnectException {
+  public void flush(Map<TopicPartition, OffsetAndMetadata> offsets) throws ConnectException {
     // Don't rely on offsets passed. They have some quirks like including topic partitions that just
     // got revoked (i.e. we have deleted the writer already). Not sure if this is intended...
     // https://twitter.com/mr_paul_banks/status/702493772983177218
 
     // Instead iterate over the writers we do have and get the offsets directly from them.
-    for (Map.Entry<CustomDateFormatPartition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
-      CustomDateFormatPartition tp = entry.getKey();
-      BlockGZIPFileWriter writer = entry.getValue();
-      if (writer.getNumRecords() == 0) {
-        // Not done anything yet
-        log.info("No new records for partition {}", tp);
-        continue;
-      }
-      try {
-        writer.close();
-
-        long nextOffset = s3.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), tp);
-
-        // Now reset writer to a new one
-        tmpFiles.put(tp, this.createNextBlockWriter(tp, nextOffset));
-        log.info("Successfully uploaded chunk for {} now at offset {}", tp, nextOffset);
-      } catch (FileNotFoundException fnf) {
-        throw new ConnectException("Failed to find local dir for temp files", fnf);
-      } catch (IOException e) {
-        throw new RetriableException("Failed S3 upload", e);
-      }
+    for (Map.Entry<TopicPartition, TopicPartitionFiles> entry : topicPartitionFilesMap.entrySet()) {
+      entry.getValue().flushFiles();
     }
-  }
-
-  private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
-    String name = String.format("%s-%05d", tp.topic(), tp.partition());
-    String path = config.get("local.buffer.dir");
-    if (path == null) {
-      throw new ConnectException("No local buffer file path configured");
-    }
-    return new BlockGZIPFileWriter(name, path, nextOffset, this.GZIPChunkThreshold);
   }
 
   @Override
@@ -162,16 +131,9 @@ public class S3SinkTask extends SinkTask {
   @Override
   public void close(Collection<TopicPartition> partitions) throws ConnectException {
     for (TopicPartition tp : partitions) {
-      // See if this is a new assignment
-      BlockGZIPFileWriter writer = this.tmpFiles.remove(tp);
-      if (writer != null) {
-        log.info("Revoked partition {} deleting buffer", tp);
-        try {
-          writer.close();
-          writer.delete();
-        } catch (IOException ioe) {
-          throw new ConnectException("Failed to resume TopicPartition form S3", ioe);
-        }
+      if (topicPartitionFilesMap.get(tp) != null) {
+        topicPartitionFilesMap.get(tp).revokeFiles();
+        topicPartitionFilesMap.remove(tp);
       }
     }
   }
@@ -179,7 +141,7 @@ public class S3SinkTask extends SinkTask {
   private void recoverAssignment(Collection<TopicPartition> partitions) throws ConnectException {
     for (TopicPartition tp : partitions) {
       // See if this is a new assignment
-      if (this.tmpFiles.get(tp) == null) {
+      if (this.topicPartitionFilesMap.get(tp) == null) {
         log.info("Assigned new partition {} creating buffer writer", tp);
         try {
           recoverPartition(tp);
@@ -198,8 +160,8 @@ public class S3SinkTask extends SinkTask {
 
     log.info("Recovering partition {} from offset {}", tp, offset);
 
-    BlockGZIPFileWriter w = createNextBlockWriter(tp, offset);
-    tmpFiles.put(tp, w);
+    TopicPartitionFiles topicPartitionFiles = new TopicPartitionFiles(tp,config.get("local.buffer.dir"), this.GZIPChunkThreshold, s3);
+    topicPartitionFilesMap.put(tp, topicPartitionFiles);
 
     this.context.offset(tp, offset);
     this.context.resume(tp);
