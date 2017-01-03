@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -71,9 +72,10 @@ public class TopicPartitionFiles {
         lastOffset=recordOffset;
     }
 
-    public void flushFiles(){
+    public ArrayList flushFiles(){
+        boolean anyFileWereUploaded=false;
+        ArrayList<String> s3DataFileKeys = new ArrayList<>();
         try {
-            boolean anyFileWereUploaded=false;
             for (Map.Entry<S3Partition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
                 BlockGZIPFileWriter writer = entry.getValue();
                 S3Partition s3Partition = entry.getKey();
@@ -83,7 +85,8 @@ public class TopicPartitionFiles {
                     continue;
                 }
                 writer.close();
-                s3.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), s3Partition);
+                String s3DataFileKey = s3.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), s3Partition);
+                s3DataFileKeys.add(s3DataFileKey);
                 anyFileWereUploaded=true;
                 log.info("Successfully uploaded chunk for {}", s3Partition);
             }
@@ -102,6 +105,7 @@ public class TopicPartitionFiles {
         } catch (IOException e) {
             throw new RetriableException("Failed S3 upload", e);
         }
+        return s3DataFileKeys;
     }
 
     private BlockGZIPFileWriter createNextBlockWriter(S3Partition tpKey, long nextOffset) throws ConnectException, IOException {

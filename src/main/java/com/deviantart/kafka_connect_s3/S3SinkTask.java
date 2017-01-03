@@ -3,8 +3,7 @@ package com.deviantart.kafka_connect_s3;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
-import com.deviantart.kafka_connect_s3.parser.JsonRecordParser;
-import com.deviantart.kafka_connect_s3.partition.CustomDateFormatS3Partition;
+import com.deviantart.kafka_connect_s3.flush.FlushAdditionalTask;
 import com.deviantart.kafka_connect_s3.partition.S3Partition;
 import com.deviantart.kafka_connect_s3.partition.TopicPartitionFiles;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -16,11 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 
 public class S3SinkTask extends SinkTask {
@@ -77,7 +72,7 @@ public class S3SinkTask extends SinkTask {
       s3Client.setS3ClientOptions(S3ClientOptions.builder().setPathStyleAccess(true).build());
     }
 
-    s3 = new S3Writer(bucket, prefix, s3Client);
+    s3 = new S3Writer(bucket, props, s3Client);
 
     // Recover initial assignments
     Set<TopicPartition> assignment = context.assignment();
@@ -117,9 +112,21 @@ public class S3SinkTask extends SinkTask {
     // got revoked (i.e. we have deleted the writer already). Not sure if this is intended...
     // https://twitter.com/mr_paul_banks/status/702493772983177218
 
+    Map<TopicPartition,ArrayList<String>> s3DataFileKeys = new HashMap<>();
     // Instead iterate over the writers we do have and get the offsets directly from them.
     for (Map.Entry<TopicPartition, TopicPartitionFiles> entry : topicPartitionFilesMap.entrySet()) {
-      entry.getValue().flushFiles();
+      s3DataFileKeys.put(entry.getKey(),entry.getValue().flushFiles());
+    }
+
+    //Case there is another Task to run after uploading files to S3
+    if (config.containsKey("additional.flush.task.class")){
+      FlushAdditionalTask additionalTask;
+      try {
+        additionalTask = (FlushAdditionalTask)Class.forName(config.get("additional.flush.task.class")).newInstance();
+      } catch (Exception e) {
+        throw new ConnectException("Couldn't load or instantiate additional flush task class");
+      }
+      additionalTask.run(s3DataFileKeys,config);
     }
   }
 

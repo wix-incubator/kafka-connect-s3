@@ -25,6 +25,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
 
 
 /**
@@ -36,30 +37,40 @@ import java.nio.file.Paths;
  */
 public class S3Writer {
   private static final Logger log = LoggerFactory.getLogger(S3Writer.class);
-  private String keyPrefix;
+  private Map<String,String> config;
   private String bucket;
   private AmazonS3 s3Client;
   private TransferManager tm;
 
-  public S3Writer(String bucket, String keyPrefix) {
-    this(bucket, keyPrefix, new AmazonS3Client(new ProfileCredentialsProvider()));
+  public S3Writer(String bucket, Map<String,String> config) {
+    this(bucket, config, new AmazonS3Client(new ProfileCredentialsProvider()));
   }
 
-  public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client) {
-    this(bucket, keyPrefix, s3Client, new TransferManager(s3Client));
+  public S3Writer(String bucket, Map<String,String> config, AmazonS3 s3Client) {
+    this(bucket, config, s3Client, new TransferManager(s3Client));
   }
 
-  public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client, TransferManager tm) {
-    if (keyPrefix.length() > 0 && !keyPrefix.endsWith("/")) {
-      keyPrefix += "/";
-    }
-    this.keyPrefix = keyPrefix;
+  public S3Writer(String bucket, Map<String,String> config, AmazonS3 s3Client, TransferManager tm) {
+    this.config = config;
     this.bucket = bucket;
     this.s3Client = s3Client;
     this.tm = tm;
   }
 
-  public void putChunk(String localDataFile, String localIndexFile, S3Partition tpKey) throws IOException {
+  private String getTopicKeyPrefix(String topic){
+    if (config.containsKey("s3.prefix."+topic)){
+      String topicKeyPrefix = config.get("s3.prefix."+topic);
+      if (topicKeyPrefix.length() > 0 && !topicKeyPrefix.endsWith("/")) {
+        topicKeyPrefix += "/";
+      }
+      return topicKeyPrefix;
+    }
+    else{
+      return "";
+    }
+  }
+
+  public String putChunk(String localDataFile, String localIndexFile, S3Partition tpKey) throws IOException {
     // Put data file then index, then finally update/create the last_index_file marker
     String dataFileKey = this.getChunkDataFileKey(localDataFile,tpKey);
     String idxFileKey = this.getChunkIndexFileKey(localIndexFile,tpKey);
@@ -78,9 +89,8 @@ public class S3Writer {
       throw new IOException("Failed to upload to S3", e);
     }
 
-
-    // Sanity check - return what the new nextOffset will be based on the index we just uploaded
-    //return nextOffset;
+    //Return data file S3 key
+    return dataFileKey;
   }
 
   public long fetchOffset(TopicPartition tp) throws IOException {
@@ -136,16 +146,16 @@ public class S3Writer {
   // return the filename and S3 full path using keyPrefix and S3Partition logic
   private String getChunkDataFileKey(String localDatafile, S3Partition tpKey) {
     Path p = Paths.get(localDatafile);
-    return String.format("%s%s%s", keyPrefix, tpKey.getDataDirectory(), p.getFileName().toString());
+    return String.format("%s%s%s", getTopicKeyPrefix(tpKey.getTopic()), tpKey.getDataDirectory(), p.getFileName().toString());
   }
 
   private String getChunkIndexFileKey(String localIndexFile, S3Partition tpKey) {
     Path p = Paths.get(localIndexFile);
-    return String.format("%s%s%s", keyPrefix, tpKey.getIndexDirectory(), p.getFileName().toString());
+    return String.format("%s%s%s", getTopicKeyPrefix(tpKey.getTopic()), tpKey.getIndexDirectory(), p.getFileName().toString());
   }
 
   private String getTopicPartitionCursorFile(TopicPartition tp) {
-    return String.format("%slast_chunk_index.%s-%05d.txt", keyPrefix, tp.topic(), tp.partition());
+    return String.format("%slast_chunk_index.%s-%05d.txt", getTopicKeyPrefix(tp.topic()), tp.topic(), tp.partition());
   }
 
   public void updateCursorFile(TopicPartition topicPartition, Long nextOffset) throws IOException {

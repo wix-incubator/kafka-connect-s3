@@ -132,13 +132,14 @@ public class S3WriterTest extends TestCase {
     AmazonS3 s3Mock = mock(AmazonS3.class);
     TransferManager tmMock = mock(TransferManager.class);
     BlockGZIPFileWriter fileWriter = createDummmyFiles(0, 1000);
-    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock, tmMock);
-    TopicPartition tp = new TopicPartition("bar", 0);
-    SinkRecord record = new SinkRecord("bar",0,null,null,null,"{\"event_time\": \"2017-01-01 01:01:30\"",0);
     Map<String,String> config = new HashMap<>();
     config.put("custom.date.partition.format","yyyy-MM-dd");
     config.put("custom.date.field.format","yyyy-MM-dd HH:mm:ss");
     config.put("custom.date.field","event_time");
+    config.put("s3.prefix.bar","pfx");
+    S3Writer s3Writer = new S3Writer(testBucket, config, s3Mock, tmMock);
+    TopicPartition tp = new TopicPartition("bar", 0);
+    SinkRecord record = new SinkRecord("bar",0,null,null,null,"{\"event_time\": \"2017-01-01 01:01:30\"",0);
     S3Partition tpKey = new CustomDateFormatS3Partition(record,config);
 
     Upload mockUpload = mock(Upload.class);
@@ -174,7 +175,9 @@ public class S3WriterTest extends TestCase {
 
   public void testFetchOffsetNewTopic() throws Exception {
     AmazonS3 s3Mock = mock(AmazonS3.class);
-    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock);
+    Map<String,String> config = new HashMap<>();
+    config.put("s3.prefix.new_topic","pfx");
+    S3Writer s3Writer = new S3Writer(testBucket, config, s3Mock);
 
     // Non existing topic should return 0 offset
     // Since the file won't exist. code will expect the initial fetch to 404
@@ -192,7 +195,9 @@ public class S3WriterTest extends TestCase {
 
   public void testFetchOffsetExistingTopic() throws Exception {
     AmazonS3 s3Mock = mock(AmazonS3.class);
-    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock);
+    Map<String,String> config = new HashMap<>();
+    config.put("s3.prefix.bar","pfx");
+    S3Writer s3Writer = new S3Writer(testBucket, config, s3Mock);
     // Existing topic should return correct offset
     // We expect 2 fetches, one for the cursor file
     // and second for the index file itself
