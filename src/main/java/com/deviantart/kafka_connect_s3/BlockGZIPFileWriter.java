@@ -114,7 +114,9 @@ public class BlockGZIPFileWriter {
     // Explicitly truncate the file. On linux and OS X this appears to happen
     // anyway when opening with FileOutputStream but that behavior is not actually documented
     // or specified anywhere so let's be rigorous about it.
-    FileOutputStream fos = new FileOutputStream(new File(getDataFilePath()));
+    File localFile = new File(getDataFilePath());
+    localFile.getParentFile().mkdirs();
+    FileOutputStream fos = new FileOutputStream(localFile);
     fos.getChannel().truncate(0);
 
     // Open file for writing and setup

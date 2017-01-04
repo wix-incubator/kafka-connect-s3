@@ -1,16 +1,16 @@
 package com.deviantart.kafka_connect_s3;
 
 import static org.mockito.Mockito.*;
+
+import com.deviantart.kafka_connect_s3.partition.CustomDateFormatS3Partition;
+import com.deviantart.kafka_connect_s3.partition.S3Partition;
+import org.apache.kafka.connect.sink.SinkRecord;
 import org.mockito.ArgumentCaptor;
 
-import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
 
@@ -27,9 +27,7 @@ import java.io.InputStreamReader;
 import java.io.IOException;
 import java.lang.StringBuilder;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 /**
  * Really basic sanity check testing over the documented use of API.
@@ -124,35 +122,45 @@ public class S3WriterTest extends TestCase {
     assertEquals(content, sb.toString());
   }
 
-  private String getKeyForFilename(String prefix, String name) {
+  private String getCustomeDateKeyForFilename(String prefix, String name) {
     SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-    return String.format("%s/%s/%s", prefix, df.format(new Date()), name);
+    Date date = (new GregorianCalendar(2017, Calendar.JANUARY, 1, 10,0,0)).getTime();
+    return String.format("%s/%s/%s", prefix, df.format(date), name);
   }
 
   public void testUpload() throws Exception {
     AmazonS3 s3Mock = mock(AmazonS3.class);
     TransferManager tmMock = mock(TransferManager.class);
     BlockGZIPFileWriter fileWriter = createDummmyFiles(0, 1000);
-    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock, tmMock);
+    Map<String,String> config = new HashMap<>();
+    config.put("custom.date.partition.format","yyyy-MM-dd");
+    config.put("custom.date.field.format","yyyy-MM-dd HH:mm:ss");
+    config.put("custom.date.field","event_time");
+    config.put("s3.prefix.bar","pfx");
+    S3Writer s3Writer = new S3Writer(testBucket, config, s3Mock, tmMock);
     TopicPartition tp = new TopicPartition("bar", 0);
+    SinkRecord record = new SinkRecord("bar",0,null,null,null,"{\"event_time\": \"2017-01-01 01:01:30\"",0);
+    S3Partition tpKey = new CustomDateFormatS3Partition(record,config);
 
     Upload mockUpload = mock(Upload.class);
 
-    when(tmMock.upload(eq(testBucket), eq(getKeyForFilename("pfx", "bar-00000-000000000000.gz")), isA(File.class)))
+    when(tmMock.upload(eq(testBucket), eq(getCustomeDateKeyForFilename("pfx", "bar-00000-000000000000.gz")), isA(File.class)))
       .thenReturn(mockUpload);
-    when(tmMock.upload(eq(testBucket), eq(getKeyForFilename("pfx", "bar-00000-000000000000.index.json")), isA(File.class)))
+    when(tmMock.upload(eq(testBucket), eq(getCustomeDateKeyForFilename("pfx/indexes", "bar-00000-000000000000.index.json")), isA(File.class)))
       .thenReturn(mockUpload);
 
-    s3Writer.putChunk(fileWriter.getDataFilePath(), fileWriter.getIndexFilePath(), tp);
+    s3Writer.putChunk(fileWriter.getDataFilePath(), fileWriter.getIndexFilePath(), tpKey);
 
     verifyTMUpload(tmMock, new ExpectedRequestParams[]{
-      new ExpectedRequestParams(getKeyForFilename("pfx", "bar-00000-000000000000.gz"), testBucket),
-      new ExpectedRequestParams(getKeyForFilename("pfx", "bar-00000-000000000000.index.json"), testBucket)
+      new ExpectedRequestParams(getCustomeDateKeyForFilename("pfx", "bar-00000-000000000000.gz"), testBucket),
+      new ExpectedRequestParams(getCustomeDateKeyForFilename("pfx/indexes", "bar-00000-000000000000.index.json"), testBucket)
     });
 
+    //Write index file
+    s3Writer.updateCursorFile(tp ,1000L);
+
     // Verify it also wrote the index file key
-    verifyStringPut(s3Mock, "pfx/last_chunk_index.bar-00000.txt",
-      getKeyForFilename("pfx", "bar-00000-000000000000.index.json"));
+    verifyStringPut(s3Mock, "pfx/last_chunk_index.bar-00000.txt", "1000");
   }
 
   private S3Object makeMockS3Object(String key, String contents) throws Exception {
@@ -167,7 +175,9 @@ public class S3WriterTest extends TestCase {
 
   public void testFetchOffsetNewTopic() throws Exception {
     AmazonS3 s3Mock = mock(AmazonS3.class);
-    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock);
+    Map<String,String> config = new HashMap<>();
+    config.put("s3.prefix.new_topic","pfx");
+    S3Writer s3Writer = new S3Writer(testBucket, config, s3Mock);
 
     // Non existing topic should return 0 offset
     // Since the file won't exist. code will expect the initial fetch to 404
@@ -185,35 +195,21 @@ public class S3WriterTest extends TestCase {
 
   public void testFetchOffsetExistingTopic() throws Exception {
     AmazonS3 s3Mock = mock(AmazonS3.class);
-    S3Writer s3Writer = new S3Writer(testBucket, "pfx", s3Mock);
+    Map<String,String> config = new HashMap<>();
+    config.put("s3.prefix.bar","pfx");
+    S3Writer s3Writer = new S3Writer(testBucket, config, s3Mock);
     // Existing topic should return correct offset
     // We expect 2 fetches, one for the cursor file
     // and second for the index file itself
-    String indexKey = getKeyForFilename("pfx", "bar-00000-000000010042.index.json");
-
     when(s3Mock.getObject(eq(testBucket), eq("pfx/last_chunk_index.bar-00000.txt")))
       .thenReturn(
-        makeMockS3Object("pfx/last_chunk_index.bar-00000.txt", indexKey)
-      );
-
-    when(s3Mock.getObject(eq(testBucket), eq(indexKey)))
-      .thenReturn(
-        makeMockS3Object(indexKey,
-          "{\"chunks\":["
-          // Assume 10 byte records, split into 3 chunks for same of checking the logic about next offset
-          // We expect next offset to be 12031 + 34
-          +"{\"first_record_offset\":10042,\"num_records\":1000,\"byte_offset\":0,\"byte_length\":10000},"
-          +"{\"first_record_offset\":11042,\"num_records\":989,\"byte_offset\":10000,\"byte_length\":9890},"
-          +"{\"first_record_offset\":12031,\"num_records\":34,\"byte_offset\":19890,\"byte_length\":340}"
-          +"]}"
-        )
+        makeMockS3Object("pfx/last_chunk_index.bar-00000.txt", "1000")
       );
 
     TopicPartition tp = new TopicPartition("bar", 0);
     long offset = s3Writer.fetchOffset(tp);
-    assertEquals(12031+34, offset);
+    assertEquals(1000, offset);
     verify(s3Mock).getObject(eq(testBucket), eq("pfx/last_chunk_index.bar-00000.txt"));
-    verify(s3Mock).getObject(eq(testBucket), eq(indexKey));
 
   }
 }
