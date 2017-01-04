@@ -93,13 +93,22 @@ public class S3SinkTask extends SinkTask {
             String topic = record.topic();
             int partition = record.kafkaPartition();
             TopicPartition tp = new TopicPartition(topic, partition);
+            S3Partition s3Partition;
 
-            //Get partitioning info from configurations
-            S3Partition s3Partition = (S3Partition)Class.forName(config.get("s3.partition.class"))
-                                                    .getConstructor(SinkRecord.class,Map.class)
-                                                    .newInstance(record,config);
+            try {
+              //Get partitioning info from configurations
+              s3Partition = (S3Partition) Class.forName(config.get("s3.partition.class"))
+                      .getConstructor(SinkRecord.class, Map.class)
+                      .newInstance(record, config);
+            }
+            //Case when instantiation of the S3Partition object is failing probably due to
+            //failure parsing or deciding on record partition
+            catch (InstantiationException ie){
+              log.error("Could not decide on an S3 partition for record: {}",record);
+              s3Partition = null;
+            }
 
-            topicPartitionFilesMap.get(tp).putRecord(s3Partition,record.kafkaOffset(),record.value().toString());
+            topicPartitionFilesMap.get(tp).putRecord(s3Partition, record.kafkaOffset(), record.value().toString());
       } catch (Exception e) {
         e.printStackTrace();
       }

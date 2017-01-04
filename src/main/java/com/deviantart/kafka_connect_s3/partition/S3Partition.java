@@ -14,7 +14,7 @@ public abstract class S3Partition {
     private final Integer partition;
     private int hash = 0;
 
-    public S3Partition(SinkRecord record, Map<String,String> props) {
+    public S3Partition(SinkRecord record, Map<String,String> props){
         this.topic = record.topic();
         this.partition = record.kafkaPartition();
     }
