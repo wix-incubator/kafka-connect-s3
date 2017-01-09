@@ -19,11 +19,18 @@ public class JsonRecordParser {
 
         JsonParser jParser = f.createParser(json.getBytes());
         while (jParser.nextToken() != JsonToken.END_OBJECT) {
+            if (jParser.getCurrentToken().isStructStart()) {
+               jParser.nextToken();
+            }
             String fieldname = jParser.getCurrentName();
             if (dateField.equals(fieldname)) {
                 jParser.nextToken();
                 date = df.parse(jParser.getText());
                 break;
+            }
+            else{
+                jParser.nextToken();
+                jParser.skipChildren();
             }
         }
         jParser.close();

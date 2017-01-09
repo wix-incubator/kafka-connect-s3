@@ -110,7 +110,7 @@ public class S3Writer {
               read = input.read(buffer, 0, buffer.length)) {
         sb.append(buffer, 0, read);
       }
-      nextOffset = Long.parseLong(sb.toString());
+      nextOffset = Long.parseLong(sb.toString().trim().replace("\n",""));
       return nextOffset;
 
     } catch (AmazonS3Exception ase) {
