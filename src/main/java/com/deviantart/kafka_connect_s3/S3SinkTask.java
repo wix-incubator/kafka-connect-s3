@@ -27,7 +27,17 @@ public class S3SinkTask extends SinkTask {
 
   private static final Logger log = LoggerFactory.getLogger(S3SinkTask.class);
 
-  private Map<String, String> config;
+  private String chunkThreshold;
+
+  private String bucket;
+
+  private String prefix;
+
+  private String overrideS3Endpoint;
+
+  private Boolean s3PathStyle;
+
+  private String bufferDirectoryPath;
 
   private Map<TopicPartition, BlockGZIPFileWriter> tmpFiles;
 
@@ -44,10 +54,9 @@ public class S3SinkTask extends SinkTask {
     return S3SinkConnectorConstants.VERSION;
   }
 
-  @Override
-  public void start(Map<String, String> props) throws ConnectException {
-    config = props;
-    String chunkThreshold = config.get("compressed_block_size");
+  private void readConfig(Map<String, String> config) {
+    chunkThreshold = config.get("compressed_block_size");
+
     if (chunkThreshold != null) {
       try {
         this.GZIPChunkThreshold = Long.parseLong(chunkThreshold);
@@ -55,8 +64,9 @@ public class S3SinkTask extends SinkTask {
         // keep default
       }
     }
-    String bucket = config.get("s3.bucket");
-    String prefix = config.get("s3.prefix");
+
+    bucket = config.get("s3.bucket");
+    prefix = config.get("s3.prefix");
     if (bucket == null || bucket == "") {
       throw new ConnectException("S3 bucket must be configured");
     }
@@ -64,15 +74,28 @@ public class S3SinkTask extends SinkTask {
       prefix = "";
     }
 
+    overrideS3Endpoint = config.get("s3.endpoint");
+
+    s3PathStyle = Boolean.parseBoolean(config.get("s3.path_style"));
+
+    bufferDirectoryPath = config.get("local.buffer.dir");
+    if (bufferDirectoryPath == null) {
+      throw new ConnectException("No local buffer file path configured");
+    }
+  }
+
+  @Override
+  public void start(Map<String, String> props) throws ConnectException {
+    readConfig(props);
+
     // Use default credentials provider that looks in Env + Java properties + profile + instance role
     AmazonS3 s3Client = new AmazonS3Client();
 
     // If worker config sets explicit endpoint override (e.g. for testing) use that
-    String s3Endpoint = config.get("s3.endpoint");
-    if (s3Endpoint != null && s3Endpoint != "") {
-      s3Client.setEndpoint(s3Endpoint);
+    if (overrideS3Endpoint != null && overrideS3Endpoint != "") {
+      s3Client.setEndpoint(overrideS3Endpoint);
     }
-    Boolean s3PathStyle = Boolean.parseBoolean(config.get("s3.path_style"));
+
     if (s3PathStyle) {
       s3Client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
     }
@@ -143,11 +166,7 @@ public class S3SinkTask extends SinkTask {
 
   private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
     String name = String.format("%s-%05d", tp.topic(), tp.partition());
-    String path = config.get("local.buffer.dir");
-    if (path == null) {
-      throw new ConnectException("No local buffer file path configured");
-    }
-    return new BlockGZIPFileWriter(name, path, nextOffset, this.GZIPChunkThreshold);
+    return new BlockGZIPFileWriter(name, bufferDirectoryPath, nextOffset, this.GZIPChunkThreshold);
   }
 
   @Override
