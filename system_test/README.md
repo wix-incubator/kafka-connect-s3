@@ -30,23 +30,25 @@ $ [sudo] pip install boto
 Since setup is somewhat expensive and complicated to automate in a highly portable fashion, we
 make setup a somewhat manual step to perform before running tests.
 
-#### 1. Ensure standalone docker image is running
+### Start standalone-kafka Docker image
 
 Kafka must be accessible on `localhost:9092`.
 
 Run it with:
 
 ```sh
-$ docker run -d --net=host -e HOSTNAME=localhost deviantart/standalone-kafka
+$ docker run -d -p 2181:2181 -p 9092:9092 --name kafka deviantart/standalone-kafka
 ```
 
 The `name` param means you can use `$ docker kill kafka` when you're done.
 
-On linux (where docker daemon is running directly on host kernel) you should be done.
+### Map ports (old versions of Docker)
 
-For OS X or other setup where docker is running in a VM, you now need to forward localhost ports to the VM.
+On newer versions of Docker (where Docker daemon is running directly on host kernel) you should be done.
 
-Assuming you used docker machine you can do this with:
+Older versions of Docker, where docker is running inside of a virtual machine, you now need to forward localhost ports to the virtual machine.
+
+Assuming you're using [docker-machine](https://docs.docker.com/machine/overview/) to manage the virtual machine, you can map the ports with:
 
 ```sh
 $ docker-machine ssh default -f -N -L 9092:localhost:9092 -L 2181:localhost:2181
