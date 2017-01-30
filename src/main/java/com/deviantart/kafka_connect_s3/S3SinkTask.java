@@ -41,7 +41,7 @@ public class S3SinkTask extends SinkTask {
 
   private Map<TopicPartition, BlockGZIPFileWriter> tmpFiles;
 
-  private long GZIPChunkThreshold = 67108864;
+  private Long maxBlockSize;
 
   private S3Writer s3;
 
@@ -54,34 +54,15 @@ public class S3SinkTask extends SinkTask {
     return S3SinkConnectorConstants.VERSION;
   }
 
-  private void readConfig(Map<String, String> config) {
-    chunkThreshold = config.get("compressed_block_size");
+  private void readConfig(Map<String, String> props) {
+    Map<String, Object> config = S3SinkConnector.CONFIG_DEF.parse(props);
 
-    if (chunkThreshold != null) {
-      try {
-        this.GZIPChunkThreshold = Long.parseLong(chunkThreshold);
-      } catch (NumberFormatException nfe) {
-        // keep default
-      }
-    }
-
-    bucket = config.get("s3.bucket");
-    prefix = config.get("s3.prefix");
-    if (bucket == null || bucket == "") {
-      throw new ConnectException("S3 bucket must be configured");
-    }
-    if (prefix == null) {
-      prefix = "";
-    }
-
-    overrideS3Endpoint = config.get("s3.endpoint");
-
-    s3PathStyle = Boolean.parseBoolean(config.get("s3.path_style"));
-
-    bufferDirectoryPath = config.get("local.buffer.dir");
-    if (bufferDirectoryPath == null) {
-      throw new ConnectException("No local buffer file path configured");
-    }
+    maxBlockSize = (Long)config.get(S3SinkConnector.MAX_BLOCK_SIZE_CONFIG);
+    bucket = (String)config.get(S3SinkConnector.S3_BUCKET_CONFIG);
+    prefix = (String)config.get(S3SinkConnector.S3_PREFIX_CONFIG);
+    overrideS3Endpoint = (String)config.get(S3SinkConnector.OVERRIDE_S3_ENDPOINT_CONFIG);
+    s3PathStyle = (Boolean)config.get(S3SinkConnector.S3_PATHSTYLE_CONFIG);
+    bufferDirectoryPath = (String)config.get(S3SinkConnector.BUFFER_DIRECTORY_PATH_CONFIG);
   }
 
   @Override
@@ -92,7 +73,7 @@ public class S3SinkTask extends SinkTask {
     AmazonS3 s3Client = new AmazonS3Client();
 
     // If worker config sets explicit endpoint override (e.g. for testing) use that
-    if (overrideS3Endpoint != null && overrideS3Endpoint != "") {
+    if (overrideS3Endpoint != "") {
       s3Client.setEndpoint(overrideS3Endpoint);
     }
 
@@ -166,7 +147,7 @@ public class S3SinkTask extends SinkTask {
 
   private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
     String name = String.format("%s-%05d", tp.topic(), tp.partition());
-    return new BlockGZIPFileWriter(name, bufferDirectoryPath, nextOffset, this.GZIPChunkThreshold);
+    return new BlockGZIPFileWriter(name, bufferDirectoryPath, nextOffset, maxBlockSize);
   }
 
   @Override
