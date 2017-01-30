@@ -5,7 +5,7 @@
 These steps should be required just once.
 
  - Install [Docker](https://docker.io)
- - Install [standalone kafka docker tool](https://github.com/DeviantArt/standalone-kafka), _in this directory_. It's already in `.gitignore`. If you already have it elsewhere or wish to share the installation, create a symlink so that we can find the helper scripts in `./system-test/standalone-kafka/kafka/bin/` relative to this repo's root.
+ - Install [standalone kafka docker tool](https://github.com/DeviantArt/standalone-kafka), _in the `system_test` directory_. It's already in `.gitignore`. If you already have it elsewhere or wish to share the installation, create a symlink so that we can find the helper scripts in `./system-test/standalone-kafka/kafka/bin/` relative to this repo's root.
   - Note that we rely on `auto.create.topics.enable = true` in the kafka broker config
 ```sh
 $ git clone https://github.com/DeviantArt/standalone-kafka.git
