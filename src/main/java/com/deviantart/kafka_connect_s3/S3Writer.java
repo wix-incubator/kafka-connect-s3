@@ -3,39 +3,21 @@ package com.deviantart.kafka_connect_s3;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PutObjectRequest;
-import com.amazonaws.services.s3.model.S3Object;
-import com.amazonaws.services.s3.model.S3ObjectInputStream;
+import com.amazonaws.services.s3.model.*;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
-
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.connect.errors.ConnectException;
-import org.apache.kafka.connect.errors.RetriableException;
-
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileReader;
-import java.io.InputStreamReader;
-import java.io.IOException;
-import java.io.Reader;
-import java.lang.StringBuilder;
+import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
+import java.util.Map;
 
 
 /**
@@ -50,16 +32,17 @@ public class S3Writer {
   private String bucket;
   private AmazonS3 s3Client;
   private TransferManager tm;
+  private Map<String, String> config;
 
-  public S3Writer(String bucket, String keyPrefix) {
-    this(bucket, keyPrefix, new AmazonS3Client(new ProfileCredentialsProvider()));
+  public S3Writer(String bucket, String keyPrefix, Map<String, String> config) {
+    this(bucket, keyPrefix, new AmazonS3Client(new ProfileCredentialsProvider()), config);
   }
 
-  public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client) {
-    this(bucket, keyPrefix, s3Client, new TransferManager(s3Client));
+  public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client, Map<String, String> config) {
+    this(bucket, keyPrefix, s3Client, new TransferManager(s3Client), config);
   }
 
-  public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client, TransferManager tm) {
+  public S3Writer(String bucket, String keyPrefix, AmazonS3 s3Client, TransferManager tm, Map<String, String> config) {
     if (keyPrefix.length() > 0 && !keyPrefix.endsWith("/")) {
       keyPrefix += "/";
     }
@@ -67,6 +50,7 @@ public class S3Writer {
     this.bucket = bucket;
     this.s3Client = s3Client;
     this.tm = tm;
+    this.config = config;
   }
 
   public long putChunk(String localDataFile, String localIndexFile, TopicPartition tp) throws IOException {
@@ -77,9 +61,13 @@ public class S3Writer {
     long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
 
     try {
-      Upload upload = tm.upload(this.bucket, dataFileKey, new File(localDataFile));
+      PutObjectRequest dataRequest = this.configurePutObjectRequest(
+              new PutObjectRequest(this.bucket, dataFileKey, new File(localDataFile)), config);
+      Upload upload = tm.upload(dataRequest);
       upload.waitForCompletion();
-      upload = tm.upload(this.bucket, idxFileKey, new File(localIndexFile));
+      PutObjectRequest keyRequest = this.configurePutObjectRequest(
+              new PutObjectRequest(this.bucket, idxFileKey, new File(localIndexFile)), config);
+      upload = tm.upload(keyRequest);
       upload.waitForCompletion();
     } catch (Exception e) {
       throw new IOException("Failed to upload to S3", e);
@@ -168,12 +156,29 @@ public class S3Writer {
       ByteArrayInputStream contentsAsStream = new ByteArrayInputStream(contentAsBytes);
       ObjectMetadata md = new ObjectMetadata();
       md.setContentLength(contentAsBytes.length);
-      s3Client.putObject(new PutObjectRequest(this.bucket, this.getTopicPartitionLastIndexFileKey(tp),
-        contentsAsStream, md));
+      PutObjectRequest request = this.configurePutObjectRequest(
+              new PutObjectRequest(this.bucket, this.getTopicPartitionLastIndexFileKey(tp), contentsAsStream, md),
+              this.config);
+      s3Client.putObject(request);
     }
     catch(Exception ex)
     {
       throw new IOException("Failed to update cursor file", ex);
+    }
+  }
+
+  private PutObjectRequest configurePutObjectRequest(PutObjectRequest request, Map<String, String> config)
+          throws IOException {
+    PutObjectRequest req = request.clone();
+    try {
+      Boolean s3EnableSse = Boolean.parseBoolean(config.get(S3SinkConnectorConstants.S3_ENABLE_SSE_CONFIG));
+      if (s3EnableSse) {
+        String s3KmsKeyId = config.get(S3SinkConnectorConstants.S3_KMS_KEY_ID_CONFIG);
+        req.setSSEAwsKeyManagementParams(new SSEAwsKeyManagementParams(s3KmsKeyId));
+      }
+      return req;
+    } catch(Exception ex) {
+      throw new IOException("Failed to create PUT object request.", ex);
     }
   }
 }

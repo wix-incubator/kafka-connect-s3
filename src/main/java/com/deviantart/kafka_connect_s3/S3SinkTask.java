@@ -1,10 +1,10 @@
 package com.deviantart.kafka_connect_s3;
 
+import com.amazonaws.regions.Region;
+import com.amazonaws.regions.RegionUtils;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.S3ClientOptions;
-
-import java.util.HashMap;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -16,9 +16,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.Collection;
-import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -55,8 +54,8 @@ public class S3SinkTask extends SinkTask {
         // keep default
       }
     }
-    String bucket = config.get("s3.bucket");
-    String prefix = config.get("s3.prefix");
+    String bucket = config.get(S3SinkConnectorConstants.S3_BUCKET_CONFIG);
+    String prefix = config.get(S3SinkConnectorConstants.S3_PREFIX_CONFIG);
     if (bucket == null || bucket == "") {
       throw new ConnectException("S3 bucket must be configured");
     }
@@ -64,20 +63,23 @@ public class S3SinkTask extends SinkTask {
       prefix = "";
     }
 
+    String s3Region = config.get(S3SinkConnectorConstants.S3_REGION_CONFIG);
+    Region region = RegionUtils.getRegion(s3Region);
+
     // Use default credentials provider that looks in Env + Java properties + profile + instance role
-    AmazonS3 s3Client = new AmazonS3Client();
+    AmazonS3 s3Client = new AmazonS3Client().withRegion(region);
 
     // If worker config sets explicit endpoint override (e.g. for testing) use that
-    String s3Endpoint = config.get("s3.endpoint");
+    String s3Endpoint = config.get(S3SinkConnectorConstants.S3_ENDPOINT_CONFIG);
     if (s3Endpoint != null && s3Endpoint != "") {
       s3Client.setEndpoint(s3Endpoint);
     }
-    Boolean s3PathStyle = Boolean.parseBoolean(config.get("s3.path_style"));
+    Boolean s3PathStyle = Boolean.parseBoolean(config.get(S3SinkConnectorConstants.S3_PATH_STYLE_CONFIG));
     if (s3PathStyle) {
       s3Client.setS3ClientOptions(new S3ClientOptions().withPathStyleAccess(true));
     }
 
-    s3 = new S3Writer(bucket, prefix, s3Client);
+    s3 = new S3Writer(bucket, prefix, s3Client, config);
 
     // Recover initial assignments
     Set<TopicPartition> assignment = context.assignment();
@@ -143,7 +145,7 @@ public class S3SinkTask extends SinkTask {
 
   private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
     String name = String.format("%s-%05d", tp.topic(), tp.partition());
-    String path = config.get("local.buffer.dir");
+    String path = config.get(S3SinkConnectorConstants.LOCAL_BUFFER_DIR_CONFIG);
     if (path == null) {
       throw new ConnectException("No local buffer file path configured");
     }
