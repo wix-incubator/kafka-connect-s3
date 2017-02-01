@@ -67,7 +67,6 @@ public class S3SinkConnector extends SinkConnector {
     ArrayList<Map<String, String>> configs = new ArrayList<>();
     for (int i = 0; i < maxTasks; i++) {
       Map<String, String> props = new HashMap<>();
-      System.out.println(configProperties);
       props.put(MAX_BLOCK_SIZE_CONFIG, configProperties.get(MAX_BLOCK_SIZE_CONFIG).toString());
       props.put(S3_BUCKET_CONFIG, configProperties.get(S3_BUCKET_CONFIG).toString());
       props.put(S3_PREFIX_CONFIG, configProperties.get(S3_PREFIX_CONFIG).toString());
