@@ -1,6 +1,6 @@
 # Kafka Connect S3 Sink
 
-This is a [kafka-connect](http://kafka.apache.org/documentation.html#connect) sink for Amazon S3, but without any dependency on HDFS/hadoop libs or data formats.
+This is a [kafka-connect](http://kafka.apache.org/documentation.html#connect) sink for Amazon S3, without any dependency on HDFS/Hadoop libraries or data formats.
 
 ## Status
 
@@ -10,7 +10,7 @@ That said, we've put some effort into a reasonably thorough test suite and will 
 
 If you use it, you will likely find issues or ways it can be improved. Please feel free to create pull requests/issues and we will do our best to merge anything that helps overall (especially if it has passing tests ;)).
 
-This was built against Kafka 0.9.0.1.
+This was built against Kafka 0.10.1.1.
 
 ## Block-GZIP Output Format
 
@@ -108,6 +108,7 @@ In addition to the [standard kafka-connect config options](http://kafka.apache.o
 | Config Key | Default | Notes |
 | ---------- | ------- | ----- |
 | s3.bucket | **REQUIRED** | The name of the bucket to write too. |
+| local.buffer.dir | **REQUIRED** | Directory to store buffered data in. Must exist. |
 | s3.prefix | `""` | Prefix added to all object keys stored in bucket to "namespace" them. |
 | s3.endpoint | AWS defaults per region | Mostly useful for testing. |
 | s3.path_style | `false` | Force path-style access to bucket rather than subdomain. Mostly useful for tests. |

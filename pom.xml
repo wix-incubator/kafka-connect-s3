@@ -49,7 +49,7 @@
   </build>
 
   <properties>
-    <kafka.version>0.9.0.1</kafka.version>
+    <kafka.version>0.10.1.1</kafka.version>
     <s3.version>1.10.37</s3.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
