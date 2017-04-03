@@ -151,7 +151,7 @@ public class S3SinkTask extends SinkTask {
   private BlockFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
     String name = String.format("%s-%05d", tp.topic(), tp.partition());
 
-    if (compressionType == "bzip2") {
+    if (compressionType.equals("bzip2")) {
         return new BlockBZIP2FileWriter(name, bufferDirectoryPath, nextOffset, maxBlockSize);
     } else {
       return new BlockGZIPFileWriter(name, bufferDirectoryPath, nextOffset, maxBlockSize);
