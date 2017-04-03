@@ -27,7 +27,7 @@ import org.json.simple.JSONObject;
  * metadata about the size and location of each block.
  *
  * This allows a reading class to skip to particular line/record without decompressing whole file by looking up
- * the offset of the containing block, seeking to it and beginning GZIp read from there.
+ * the offset of the containing block, seeking to it and beginning GZIP read from there.
  *
  * This is especially useful when the file is an archive in HTTP storage like Amazon S3 where GET request with
  * range headers can allow pulling a small segment from overall compressed file.
@@ -68,5 +68,10 @@ public class BlockGZIPFileWriter extends BlockFileWriter {
         // We can no find out how long this chunk was compressed
         long bytesWritten = fileStream.getNumBytesWritten();
         ch.compressedByteLength = bytesWritten - ch.byteOffset;
+    }
+
+    @Override
+    public String getDataFileName() {
+        return String.format("%s-%012d.gz", filenameBase, super.getFirstRecordOffset());
     }
 }

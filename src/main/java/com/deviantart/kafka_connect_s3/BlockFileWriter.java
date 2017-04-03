@@ -19,7 +19,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 abstract class BlockFileWriter {
-    private String filenameBase;
+    protected String filenameBase;
     private String path;
     protected BufferedWriter writer;
     protected CountingOutputStream fileStream;
@@ -60,6 +60,7 @@ abstract class BlockFileWriter {
 
     abstract protected void initChunkWriter() throws IOException;
     abstract protected void finishChunk() throws IOException;
+    abstract protected String getDataFileName();
 
     protected Chunk currentChunk() {
         return chunks.get(chunks.size() - 1);
@@ -67,10 +68,6 @@ abstract class BlockFileWriter {
 
     public long getFirstRecordOffset() {
         return firstRecordOffset;
-    }
-
-    public String getDataFileName() {
-        return String.format("%s-%012d.gz", filenameBase, firstRecordOffset);
     }
 
     public String getIndexFileName() {
