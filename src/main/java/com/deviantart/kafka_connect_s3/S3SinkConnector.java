@@ -36,13 +36,16 @@ public class S3SinkConnector extends SinkConnector {
 
   public static final String BUFFER_DIRECTORY_PATH_CONFIG = "local.buffer.dir";
 
+  public static final String COMPRESSION_TYPE = "compression.type";
+
   public static final ConfigDef CONFIG_DEF = new ConfigDef()
-    .define(MAX_BLOCK_SIZE_CONFIG, Type.LONG, DEFAULT_MAX_BLOCK_SIZE, Range.atLeast(0), Importance.LOW, "Maximum size of data chunks in bytes (before compression)")
+    .define(MAX_BLOCK_SIZE_CONFIG, Type.LONG, DEFAULT_MAX_BLOCK_SIZE, Range.atLeast(0), Importance.LOW, "Maximum size of data chunks in bytes (before compression).")
     .define(S3_BUCKET_CONFIG, Type.STRING, Importance.HIGH, "Name of the S3 bucket")
-    .define(S3_PREFIX_CONFIG, Type.STRING, "", Importance.HIGH, "Path prefix of files to be written to S3")
-    .define(OVERRIDE_S3_ENDPOINT_CONFIG, Type.STRING, "", Importance.LOW, "Override the S3 URL endpoint")
-    .define(S3_PATHSTYLE_CONFIG, Type.BOOLEAN, false, Importance.LOW, "Override the standard S3 URL style by placing the bucket name in the path instead of hostname")
-    .define(BUFFER_DIRECTORY_PATH_CONFIG, Type.STRING, Importance.HIGH, "Path to directory to store data temporarily before uploading to S3")
+    .define(S3_PREFIX_CONFIG, Type.STRING, "", Importance.HIGH, "Path prefix of files to be written to S3.")
+    .define(OVERRIDE_S3_ENDPOINT_CONFIG, Type.STRING, "", Importance.LOW, "Override the S3 URL endpoint.")
+    .define(S3_PATHSTYLE_CONFIG, Type.BOOLEAN, false, Importance.LOW, "Override the standard S3 URL style by placing the bucket name in the path instead of hostname.")
+    .define(BUFFER_DIRECTORY_PATH_CONFIG, Type.STRING, Importance.HIGH, "Path to directory to store data temporarily before uploading to S3.")
+    .define(COMPRESSION_TYPE, Type.STRING, "gzip", Importance.HIGH, "The compression type to use, gzip and bzip2 supported. Defaults to gzip.")
     ;
 
   private Map<String, Object> configProperties;
@@ -73,6 +76,7 @@ public class S3SinkConnector extends SinkConnector {
       props.put(OVERRIDE_S3_ENDPOINT_CONFIG, configProperties.get(OVERRIDE_S3_ENDPOINT_CONFIG).toString());
       props.put(S3_PATHSTYLE_CONFIG, configProperties.get(S3_PATHSTYLE_CONFIG).toString());
       props.put(BUFFER_DIRECTORY_PATH_CONFIG, configProperties.get(BUFFER_DIRECTORY_PATH_CONFIG).toString());
+      props.put(COMPRESSION_TYPE, configProperties.get(COMPRESSION_TYPE).toString());
       configs.add(props);
     }
     return configs;
