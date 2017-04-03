@@ -1,19 +1,12 @@
 package com.deviantart.kafka_connect_s3;
 
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.InputStreamReader;
-import java.io.RandomAccessFile;
+import java.io.IOException;
+import java.io.InputStream;
 
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertEquals;
@@ -32,14 +25,33 @@ public class BlockBZIP2FileWriterTest extends BlockFileWriterTestCommon {
         System.out.println("Temp dir for writer test is: " + tmpDir);
     }
 
+    @Override
+    protected BlockFileWriter newBlockFileWriter(String filenameBase, String path) throws IOException {
+        return new BlockBZIP2FileWriter(filenameBase, path);
+    }
+
+    @Override
+    protected BlockFileWriter newBlockFileWriter(String filenameBase, String path, long firstRecordOffset) throws IOException {
+        return new BlockBZIP2FileWriter(filenameBase, path, firstRecordOffset);
+    }
+
+    @Override
+    protected BlockFileWriter newBlockFileWriter(String filenameBase, String path, long firstRecordOffset, long chunkThreshold) throws IOException {
+        return new BlockBZIP2FileWriter(filenameBase, path, firstRecordOffset, chunkThreshold);
+    }
+
+    protected InputStream newCompressorInputStream(InputStream in) throws IOException {
+        return new BZip2CompressorInputStream(in);
+    }
+
     @Test
     public void testPaths() throws Exception {
-        BlockBZIP2FileWriter w = new BlockBZIP2FileWriter("foo", tmpDir);
+        BlockFileWriter w = newBlockFileWriter("foo", tmpDir);
         assertEquals(tmpDir + "/foo-000000000000.bzip2", w.getDataFilePath());
         assertEquals(tmpDir + "/foo-000000000000.index.json", w.getIndexFilePath());
 
 
-        BlockBZIP2FileWriter w2 = new BlockBZIP2FileWriter("foo", tmpDir, 123456);
+        BlockFileWriter w2 = newBlockFileWriter("foo", tmpDir, 123456);
         assertEquals(tmpDir + "/foo-000000123456.bzip2", w2.getDataFilePath());
         assertEquals(tmpDir + "/foo-000000123456.index.json", w2.getIndexFilePath());
     }
@@ -51,7 +63,7 @@ public class BlockBZIP2FileWriterTest extends BlockFileWriterTestCommon {
                 + "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
         // Make a writer with artificially small chunk threshold of 1kb
-        BlockBZIP2FileWriter w = new BlockBZIP2FileWriter("write-test", tmpDir, 987654321, 1000);
+        BlockFileWriter w = newBlockFileWriter("write-test", tmpDir, 987654321, 1000);
 
         int totalUncompressedBytes = 0;
         String[] expectedLines = new String[50];
@@ -75,82 +87,11 @@ public class BlockBZIP2FileWriterTest extends BlockFileWriterTestCommon {
 
         w.close();
 
-        verifyOutputIsSaneBZIP2File(w.getDataFilePath(), expectedLines);
+        verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines);
         verifyIndexFile(w, 987654321, expectedLines);
     }
 
-    private void verifyOutputIsSaneBZIP2File(String filename, String[] expectedRecords) throws Exception {
-        BZip2CompressorInputStream zip = new BZip2CompressorInputStream(new FileInputStream(filename));
-        BufferedReader r = new BufferedReader(new InputStreamReader(zip, "UTF-8"));
 
-        String line;
-        int i = 0;
-        while ((line = r.readLine()) != null) {
-            assertTrue(String.format("Output file has more lines than expected. Expected %d lines", expectedRecords.length)
-                    , i < expectedRecords.length);
-
-            String expectedLine = expectedRecords[i];
-            assertEquals(String.format("Output file doesn't match, first difference on line %d", i), expectedLine, line);
-            i++;
-        }
-    }
-
-    private void verifyIndexFile(BlockBZIP2FileWriter w, int startOffset, String[] expectedRecords) throws Exception {
-        JSONParser parser = new JSONParser();
-
-        Object obj = parser.parse(new FileReader(w.getIndexFilePath()));
-        JSONObject index = (JSONObject) obj;
-        JSONArray chunks = (JSONArray) index.get("chunks");
-
-        assertEquals(w.getNumChunks(), chunks.size());
-
-        RandomAccessFile file = new RandomAccessFile(w.getDataFilePath(), "r");
-
-        // Check we can read all the chunks as individual bzip2 segments
-        int expectedStartOffset = startOffset;
-        int recordIndex = 0;
-        int totalBytes = 0;
-        int chunkIndex = 0;
-        for (Object chunk : chunks) {
-            JSONObject chunkObj = (JSONObject) chunk;
-            int firstOffset = (int) (long) chunkObj.get("first_record_offset");
-            int numRecords = (int) (long) chunkObj.get("num_records");
-            int byteOffset = (int) (long) chunkObj.get("byte_offset");
-            int byteLength = (int) (long) chunkObj.get("byte_length");
-
-            assertEquals(expectedStartOffset, firstOffset);
-            assertTrue(byteLength > 0);
-            assertTrue(byteOffset >= 0);
-
-            // Read just that segment of the file into byte array and attempt to parse BZIP2
-            byte[] buffer = new byte[byteLength];
-            file.seek(byteOffset);
-            int numBytesRead = file.read(buffer);
-
-            assertEquals(buffer.length, numBytesRead);
-
-            BZip2CompressorInputStream zip = new BZip2CompressorInputStream(new ByteArrayInputStream(buffer));
-            BufferedReader r = new BufferedReader(new InputStreamReader(zip, "UTF-8"));
-
-            int numRecordsActuallyInChunk = 0;
-            String line;
-            while ((line = r.readLine()) != null) {
-                assertEquals(expectedRecords[recordIndex], line);
-                recordIndex++;
-                numRecordsActuallyInChunk++;
-            }
-
-            assertEquals(numRecordsActuallyInChunk, numRecords);
-
-            totalBytes += byteLength;
-
-            expectedStartOffset = firstOffset + numRecords;
-
-            chunkIndex++;
-        }
-
-        assertEquals("All chunks should cover all bytes in the file", totalBytes, file.length());
-    }
 
     // Hmm this test is actually not very conclusive - on OS X and most linux file systems
     // it passes anyway due to nature of filesystems. Not sure how to write something more robust
@@ -176,14 +117,14 @@ public class BlockBZIP2FileWriterTest extends BlockFileWriterTestCommon {
             w.close();
 
             // Just check it actually write to disk
-            verifyOutputIsSaneBZIP2File(w.getDataFilePath(), expectedLines);
+            verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines);
             verifyIndexFile(w, 0, expectedLines);
 
         }
 
         {
             // Now make a whole new writer for same chunk
-            BlockBZIP2FileWriter w = new BlockBZIP2FileWriter("overwrite-test", tmpDir);
+            BlockFileWriter w = newBlockFileWriter("overwrite-test", tmpDir);
 
             // Only write a few lines
             String[] expectedLines2 = new String[10];
@@ -198,7 +139,7 @@ public class BlockBZIP2FileWriterTest extends BlockFileWriterTestCommon {
             w.close();
 
             // No check output is only the 10 lines we just wrote
-            verifyOutputIsSaneBZIP2File(w.getDataFilePath(), expectedLines2);
+            verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines2);
             verifyIndexFile(w, 0, expectedLines2);
         }
     }
@@ -206,7 +147,7 @@ public class BlockBZIP2FileWriterTest extends BlockFileWriterTestCommon {
     @Test
     public void testDelete() throws Exception {
         // Make writer and write to it a bit.
-        BlockBZIP2FileWriter w = new BlockBZIP2FileWriter("overwrite-test", tmpDir);
+        BlockFileWriter w = newBlockFileWriter("overwrite-test", tmpDir);
 
         String[] expectedLines = new String[5000];
         for (int i = 0; i < 5000; i++) {
@@ -220,7 +161,7 @@ public class BlockBZIP2FileWriterTest extends BlockFileWriterTestCommon {
         w.close();
 
         // Just check it actually write to disk
-        verifyOutputIsSaneBZIP2File(w.getDataFilePath(), expectedLines);
+        verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines);
         verifyIndexFile(w, 0, expectedLines);
 
         // Now remove it

@@ -1,20 +1,12 @@
 package com.deviantart.kafka_connect_s3;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.InputStreamReader;
-import java.io.RandomAccessFile;
-import java.util.zip.GZIPInputStream;
-
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.zip.GZIPInputStream;
 
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertEquals;
@@ -33,14 +25,33 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
         System.out.println("Temp dir for writer test is: " + tmpDir);
     }
 
+    @Override
+    protected BlockFileWriter newBlockFileWriter(String filenameBase, String path) throws IOException {
+        return new BlockGZIPFileWriter(filenameBase, path);
+    }
+
+    @Override
+    protected BlockFileWriter newBlockFileWriter(String filenameBase, String path, long firstRecordOffset) throws IOException {
+        return new BlockGZIPFileWriter(filenameBase, path, firstRecordOffset);
+    }
+
+    @Override
+    protected BlockFileWriter newBlockFileWriter(String filenameBase, String path, long firstRecordOffset, long chunkThreshold) throws IOException {
+        return new BlockGZIPFileWriter(filenameBase, path, firstRecordOffset, chunkThreshold);
+    }
+
+    protected InputStream newCompressorInputStream(InputStream in) throws IOException {
+        return new GZIPInputStream(in);
+    }
+
     @Test
     public void testPaths() throws Exception {
-        BlockGZIPFileWriter w = new BlockGZIPFileWriter("foo", tmpDir);
+        BlockFileWriter w = newBlockFileWriter("foo", tmpDir);
         assertEquals(tmpDir + "/foo-000000000000.gz", w.getDataFilePath());
         assertEquals(tmpDir + "/foo-000000000000.index.json", w.getIndexFilePath());
 
 
-        BlockGZIPFileWriter w2 = new BlockGZIPFileWriter("foo", tmpDir, 123456);
+        BlockFileWriter w2 = newBlockFileWriter("foo", tmpDir, 123456);
         assertEquals(tmpDir + "/foo-000000123456.gz", w2.getDataFilePath());
         assertEquals(tmpDir + "/foo-000000123456.index.json", w2.getIndexFilePath());
     }
@@ -52,7 +63,7 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
                 + "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
         // Make a writer with artificially small chunk threshold of 1kb
-        BlockGZIPFileWriter w = new BlockGZIPFileWriter("write-test", tmpDir, 987654321, 1000);
+        BlockFileWriter w = newBlockFileWriter("write-test", tmpDir, 987654321, 1000);
 
         int totalUncompressedBytes = 0;
         String[] expectedLines = new String[50];
@@ -76,81 +87,8 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
 
         w.close();
 
-        verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
+        verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines);
         verifyIndexFile(w, 987654321, expectedLines);
-    }
-
-    private void verifyOutputIsSaneGZIPFile(String filename, String[] expectedRecords) throws Exception {
-        GZIPInputStream zip = new GZIPInputStream(new FileInputStream(filename));
-        BufferedReader r = new BufferedReader(new InputStreamReader(zip, "UTF-8"));
-
-        String line;
-        int i = 0;
-        while ((line = r.readLine()) != null) {
-            assertTrue(String.format("Output file has more lines than expected. Expected %d lines", expectedRecords.length)
-                    , i < expectedRecords.length);
-
-            String expectedLine = expectedRecords[i];
-            assertEquals(String.format("Output file doesn't match, first difference on line %d", i), expectedLine, line);
-            i++;
-        }
-    }
-
-    private void verifyIndexFile(BlockGZIPFileWriter w, int startOffset, String[] expectedRecords) throws Exception {
-        JSONParser parser = new JSONParser();
-
-        Object obj = parser.parse(new FileReader(w.getIndexFilePath()));
-        JSONObject index = (JSONObject) obj;
-        JSONArray chunks = (JSONArray) index.get("chunks");
-
-        assertEquals(w.getNumChunks(), chunks.size());
-
-        RandomAccessFile file = new RandomAccessFile(w.getDataFilePath(), "r");
-
-        // Check we can read all the chunks as individual gzip segments
-        int expectedStartOffset = startOffset;
-        int recordIndex = 0;
-        int totalBytes = 0;
-        int chunkIndex = 0;
-        for (Object chunk : chunks) {
-            JSONObject chunkObj = (JSONObject) chunk;
-            int firstOffset = (int) (long) chunkObj.get("first_record_offset");
-            int numRecords = (int) (long) chunkObj.get("num_records");
-            int byteOffset = (int) (long) chunkObj.get("byte_offset");
-            int byteLength = (int) (long) chunkObj.get("byte_length");
-
-            assertEquals(expectedStartOffset, firstOffset);
-            assertTrue(byteLength > 0);
-            assertTrue(byteOffset >= 0);
-
-            // Read just that segment of the file into byte array and attempt to parse GZIP
-            byte[] buffer = new byte[byteLength];
-            file.seek(byteOffset);
-            int numBytesRead = file.read(buffer);
-
-            assertEquals(buffer.length, numBytesRead);
-
-            GZIPInputStream zip = new GZIPInputStream(new ByteArrayInputStream(buffer));
-            BufferedReader r = new BufferedReader(new InputStreamReader(zip, "UTF-8"));
-
-            int numRecordsActuallyInChunk = 0;
-            String line;
-            while ((line = r.readLine()) != null) {
-                assertEquals(expectedRecords[recordIndex], line);
-                recordIndex++;
-                numRecordsActuallyInChunk++;
-            }
-
-            assertEquals(numRecordsActuallyInChunk, numRecords);
-
-            totalBytes += byteLength;
-
-            expectedStartOffset = firstOffset + numRecords;
-
-            chunkIndex++;
-        }
-
-        assertEquals("All chunks should cover all bytes in the file", totalBytes, file.length());
     }
 
     // Hmm this test is actually not very conclusive - on OS X and most linux file systems
@@ -161,7 +99,7 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
     public void testShouldOverwrite() throws Exception {
         // Make writer and write to it a bit.
         {
-            BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+            BlockFileWriter w = newBlockFileWriter("overwrite-test", tmpDir);
 
             // Write at least a few 4k blocks to disk so we can be sure that we don't
             // only overwrite the first block.
@@ -177,14 +115,14 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
             w.close();
 
             // Just check it actually write to disk
-            verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
+            verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines);
             verifyIndexFile(w, 0, expectedLines);
 
         }
 
         {
             // Now make a whole new writer for same chunk
-            BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+            BlockFileWriter w = newBlockFileWriter("overwrite-test", tmpDir);
 
             // Only write a few lines
             String[] expectedLines2 = new String[10];
@@ -199,7 +137,7 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
             w.close();
 
             // No check output is only the 10 lines we just wrote
-            verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines2);
+            verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines2);
             verifyIndexFile(w, 0, expectedLines2);
         }
     }
@@ -207,7 +145,7 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
     @Test
     public void testDelete() throws Exception {
         // Make writer and write to it a bit.
-        BlockGZIPFileWriter w = new BlockGZIPFileWriter("overwrite-test", tmpDir);
+        BlockFileWriter w = newBlockFileWriter("overwrite-test", tmpDir);
 
         String[] expectedLines = new String[5000];
         for (int i = 0; i < 5000; i++) {
@@ -221,7 +159,7 @@ public class BlockGZIPFileWriterTest extends BlockFileWriterTestCommon {
         w.close();
 
         // Just check it actually write to disk
-        verifyOutputIsSaneGZIPFile(w.getDataFilePath(), expectedLines);
+        verifyOutputIsSaneCompressedFile(w.getDataFilePath(), expectedLines);
         verifyIndexFile(w, 0, expectedLines);
 
         // Now remove it
