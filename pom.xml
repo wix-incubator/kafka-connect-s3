@@ -4,7 +4,7 @@
 
   <groupId>com.deviantart</groupId>
   <artifactId>kafka-connect-s3</artifactId>
-  <version>0.0.3</version>
+  <version>0.0.4</version>
   <packaging>jar</packaging>
 
   <name>kafka-connect-s3</name>
@@ -82,6 +82,11 @@
       <groupId>com.amazonaws</groupId>
       <artifactId>aws-java-sdk-s3</artifactId>
       <version>${s3.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-compress</artifactId>
+      <version>1.13</version>
     </dependency>
     <dependency>
       <groupId>junit</groupId>

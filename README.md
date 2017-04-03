@@ -86,11 +86,9 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
   - Depending on your needs you can either limit to just the single block, or if you want to consume all records after that offset, you can consume from the offset right to the end of the file
  - The range request bytes can be decompressed as a GZIP file on their own with any GZIP compatible tool, provided you limit to whole block boundaries.
 
-## Other Formats
+## BZip2 format
 
-For now we only support Block-GZIP output. This assumes that all your kafka messages can be output as newline-delimited text files.
-
-We could make the output format pluggable if others have use for this connector, but need binary serialisation formats like Avro/Thrift/Protobuf etc. Pull requests welcome.
+Works exactly the same way as the Block-GZIP output format, see above.
 
 ## Build and Run
 
@@ -113,6 +111,7 @@ In addition to the [standard kafka-connect config options](http://kafka.apache.o
 | s3.endpoint | AWS defaults per region | Mostly useful for testing. |
 | s3.path_style | `false` | Force path-style access to bucket rather than subdomain. Mostly useful for tests. |
 | compressed_block_size | 67108864 | How much _uncompressed_ data to write to the file before we rol to a new block/chunk. See [Block-GZIP](#user-content-block-gzip-output-format) section above. |
+| compression.type | `gzip` | The compression algorithm, either `gzip` or `bzip2`. |
 
 Note that we use the default AWS SDK credentials provider. [Refer to their docs](http://docs.aws.amazon.com/AWSSdkDocsJava/latest/DeveloperGuide/credentials.html#id1) for the options for configuring S3 credentials.
 
