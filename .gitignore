@@ -1,6 +1,9 @@
 local-*
 # Created by https://www.gitignore.io/api/maven
 
+.idea
+*.iml
+
 ### Maven ###
 target/
 pom.xml.tag
