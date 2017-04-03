@@ -117,18 +117,5 @@ Note that we use the default AWS SDK credentials provider. [Refer to their docs]
 
 ## Testing
 
-Most of the custom logic for handling output formatting, and managing S3 has reasonable mocked unit tests. There are probably improvements that can be made, but the logic is not especially complex.
-
-There is also a basic system test to validate the integration with kafka-connect. This is not complete nor is it 100% deterministic due to the vagaries of multiple systems with non-deterministic things like timers effecting behaviour.
-
-But it does consistently pass when run by hand on my Mac and validates basic operation of:
-
- - Initialisation and consuming/flushing all expected data
- - Resuming correctly on restart based on S3 state not relying on local disk state
- - Reconfiguring partitions of a topic and correctly resuming each
-
-It doesn't test distributed mode operation yet, however the above is enough to exercise all of the integration points with the kafka-connect runtime.
-
-### System Test Setup
-
-See [the README in the system_test dir](/system_test/README.md) for details on setting up dependencies and environment to run the tests.
+Integration tests can be ran using Docker.
+Simply run the `run-integration-tests.sh` script on a Mac/Linux system.
