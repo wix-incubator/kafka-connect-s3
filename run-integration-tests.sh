@@ -5,7 +5,7 @@ set -e
 trap "docker-compose down" EXIT
 
 if uname | grep -q Linux; then
-    export DOCKER_BIND_IP=$(ip route | awk '/default/ { print $3 }')
+    export DOCKER_BIND_IP=$(ip addr | grep 'eth0:' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')
 elif uname | grep -q Darwin; then
     export DOCKER_BIND_IP=$(ifconfig en0 | grep inet | grep -v inet6 | awk '{print $2}')
 else
@@ -32,7 +32,7 @@ kafka-topics --zookeeper zookeeper:2181 \
 --partitions 3 \
 --replication-factor 1
 
-sleep 5
+sleep 10
 
 # Submitting JSON configuration
 curl -H "Content-Type: application/json" \
