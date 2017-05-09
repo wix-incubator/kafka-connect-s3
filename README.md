@@ -14,7 +14,7 @@ This was built against Kafka 0.10.1.1.
 
 ## Block-GZIP Output Format
 
-For now there is just one output format which is essentially just a GZIPed text file with one Kafka message per line.
+This format is essentially just a GZIPed text file with one Kafka message per line.
 
 It's actually a little more sophisticated than that though. We exploit a property of GZIP whereby multiple GZIP encoded files can be concatenated to produce a single file. Such a concatenated file is a valid GZIP file in its own right and will be decompressed by _any GZIP implementation_ to a single stream of lines -- exactly as if the input files were concatenated first and compressed together.
 
