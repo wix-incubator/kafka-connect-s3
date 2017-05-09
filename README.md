@@ -14,7 +14,7 @@ This was built against Kafka 0.10.1.1.
 
 ## Block-GZIP Output Format
 
-For now there is just one output format which is essentially just a GZIPed text file with one Kafka message per line.
+This format is essentially just a GZIPed text file with one Kafka message per line.
 
 It's actually a little more sophisticated than that though. We exploit a property of GZIP whereby multiple GZIP encoded files can be concatenated to produce a single file. Such a concatenated file is a valid GZIP file in its own right and will be decompressed by _any GZIP implementation_ to a single stream of lines -- exactly as if the input files were concatenated first and compressed together.
 
@@ -86,11 +86,9 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
   - Depending on your needs you can either limit to just the single block, or if you want to consume all records after that offset, you can consume from the offset right to the end of the file
  - The range request bytes can be decompressed as a GZIP file on their own with any GZIP compatible tool, provided you limit to whole block boundaries.
 
-## Other Formats
+## BZip2 format
 
-For now we only support Block-GZIP output. This assumes that all your kafka messages can be output as newline-delimited text files.
-
-We could make the output format pluggable if others have use for this connector, but need binary serialisation formats like Avro/Thrift/Protobuf etc. Pull requests welcome.
+Works exactly the same way as the Block-GZIP output format, see above.
 
 ## Build and Run
 
@@ -113,23 +111,11 @@ In addition to the [standard kafka-connect config options](http://kafka.apache.o
 | s3.endpoint | AWS defaults per region | Mostly useful for testing. |
 | s3.path_style | `false` | Force path-style access to bucket rather than subdomain. Mostly useful for tests. |
 | compressed_block_size | 67108864 | How much _uncompressed_ data to write to the file before we rol to a new block/chunk. See [Block-GZIP](#user-content-block-gzip-output-format) section above. |
+| compression.type | `gzip` | The compression algorithm, either `gzip` or `bzip2`. |
 
 Note that we use the default AWS SDK credentials provider. [Refer to their docs](http://docs.aws.amazon.com/AWSSdkDocsJava/latest/DeveloperGuide/credentials.html#id1) for the options for configuring S3 credentials.
 
 ## Testing
 
-Most of the custom logic for handling output formatting, and managing S3 has reasonable mocked unit tests. There are probably improvements that can be made, but the logic is not especially complex.
-
-There is also a basic system test to validate the integration with kafka-connect. This is not complete nor is it 100% deterministic due to the vagaries of multiple systems with non-deterministic things like timers effecting behaviour.
-
-But it does consistently pass when run by hand on my Mac and validates basic operation of:
-
- - Initialisation and consuming/flushing all expected data
- - Resuming correctly on restart based on S3 state not relying on local disk state
- - Reconfiguring partitions of a topic and correctly resuming each
-
-It doesn't test distributed mode operation yet, however the above is enough to exercise all of the integration points with the kafka-connect runtime.
-
-### System Test Setup
-
-See [the README in the system_test dir](/system_test/README.md) for details on setting up dependencies and environment to run the tests.
+Integration tests can be ran using Docker.
+Simply run the `run-integration-tests.sh` script on a Mac/Linux system.

@@ -39,7 +39,9 @@ public class S3SinkTask extends SinkTask {
 
   private String bufferDirectoryPath;
 
-  private Map<TopicPartition, BlockGZIPFileWriter> tmpFiles;
+  private String compressionType;
+
+  private Map<TopicPartition, BlockFileWriter> tmpFiles;
 
   private Long maxBlockSize;
 
@@ -63,6 +65,7 @@ public class S3SinkTask extends SinkTask {
     overrideS3Endpoint = (String)config.get(S3SinkConnector.OVERRIDE_S3_ENDPOINT_CONFIG);
     s3PathStyle = (Boolean)config.get(S3SinkConnector.S3_PATHSTYLE_CONFIG);
     bufferDirectoryPath = (String)config.get(S3SinkConnector.BUFFER_DIRECTORY_PATH_CONFIG);
+    compressionType = (String)config.get(S3SinkConnector.COMPRESSION_TYPE);
   }
 
   @Override
@@ -102,7 +105,7 @@ public class S3SinkTask extends SinkTask {
         String topic = record.topic();
         int partition = record.kafkaPartition();
         TopicPartition tp = new TopicPartition(topic, partition);
-        BlockGZIPFileWriter buffer = tmpFiles.get(tp);
+          BlockFileWriter buffer = tmpFiles.get(tp);
         if (buffer == null) {
           log.error("Trying to put {} records to partition {} which doesn't exist yet", records.size(), tp);
           throw new ConnectException("Trying to put records for a topic partition that has not be assigned");
@@ -121,9 +124,9 @@ public class S3SinkTask extends SinkTask {
     // https://twitter.com/mr_paul_banks/status/702493772983177218
 
     // Instead iterate over the writers we do have and get the offsets directly from them.
-    for (Map.Entry<TopicPartition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
+    for (Map.Entry<TopicPartition, BlockFileWriter> entry : tmpFiles.entrySet()) {
       TopicPartition tp = entry.getKey();
-      BlockGZIPFileWriter writer = entry.getValue();
+        BlockFileWriter writer = entry.getValue();
       if (writer.getNumRecords() == 0) {
         // Not done anything yet
         log.info("No new records for partition {}", tp);
@@ -145,9 +148,14 @@ public class S3SinkTask extends SinkTask {
     }
   }
 
-  private BlockGZIPFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
+  private BlockFileWriter createNextBlockWriter(TopicPartition tp, long nextOffset) throws ConnectException, IOException {
     String name = String.format("%s-%05d", tp.topic(), tp.partition());
-    return new BlockGZIPFileWriter(name, bufferDirectoryPath, nextOffset, maxBlockSize);
+
+    if (compressionType.equals("bzip2")) {
+        return new BlockBZIP2FileWriter(name, bufferDirectoryPath, nextOffset, maxBlockSize);
+    } else {
+      return new BlockGZIPFileWriter(name, bufferDirectoryPath, nextOffset, maxBlockSize);
+    }
   }
 
   @Override
@@ -159,7 +167,7 @@ public class S3SinkTask extends SinkTask {
   public void onPartitionsRevoked(Collection<TopicPartition> partitions) throws ConnectException {
     for (TopicPartition tp : partitions) {
       // See if this is a new assignment
-      BlockGZIPFileWriter writer = this.tmpFiles.remove(tp);
+        BlockFileWriter writer = this.tmpFiles.remove(tp);
       if (writer != null) {
         log.info("Revoked partition {} deleting buffer", tp);
         try {
@@ -194,7 +202,7 @@ public class S3SinkTask extends SinkTask {
 
     log.info("Recovering partition {} from offset {}", tp, offset);
 
-    BlockGZIPFileWriter w = createNextBlockWriter(tp, offset);
+      BlockFileWriter w = createNextBlockWriter(tp, offset);
     tmpFiles.put(tp, w);
 
     this.context.offset(tp, offset);
