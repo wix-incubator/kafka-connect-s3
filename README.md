@@ -1,4 +1,5 @@
 # Kafka Connect S3 Sink
+[![build passing](https://jenkins-public.personali.io/badge-icon?organization=personali&branch=master&project=kafka-connect-s3)](http://172.34.1.161:8080/view/Organization/job/personali/job/kafka-connect-s3/job/master/)
 
 This is a [kafka-connect](http://kafka.apache.org/documentation.html#connect) sink for Amazon S3, without any dependency on HDFS/Hadoop libraries or data formats.
 
