@@ -35,11 +35,11 @@ public class ConnectorIT {
 
     private static final String TEST_TOPIC_NAME = "test-topic";
     private static final String BUCKET_NAME = "fakes3";
-    private static final String TODAY_FORMATTED =
-            new SimpleDateFormat("YYYY-MM-dd").format(Instant.now().toDate());
+    private static final String DATE_FORMATTED = "2017/11/11";
     private static final String BUCKET_PREFIX = "connect-system-test/";
     private static final String FILE_PREFIX = "systest/";
-    private static final String FILE_PREFIX_WITH_DATE = FILE_PREFIX + TODAY_FORMATTED + "/";
+    private static final String FILE_PREFIX_WITH_DATE = FILE_PREFIX + DATE_FORMATTED + "/";
+    private static final String INDEXES_FILE_PREFIX_WITH_DATE = FILE_PREFIX +"indexes/" + DATE_FORMATTED + "/";
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
     private static KafkaProducer<Integer, String> producer;
@@ -50,7 +50,7 @@ public class ConnectorIT {
     @BeforeClass
     public static void oneTimeSetUp() {
 
-        String kafkaBrokers = System.getenv("KAFKA_BROKERS");
+        String kafkaBrokers = "broker:9092";
         String fakeS3Endpoint = "http://localhost:4569";
 
         Properties producerProperties = new Properties();
@@ -67,7 +67,7 @@ public class ConnectorIT {
 
         for (int i = 200; i < 300; i++) {
             int partition = i % 3;
-            String message = "{\"foo\": \"bar\", \"counter\":" + i + "}";
+            String message = "{\"event_time\": \"2017-11-11 11:11:11\", \"counter\":" + i + "}";
 
             String existingMessagesInS3PerPartition = expectedMessagesInS3PerPartition.get(partition);
             existingMessagesInS3PerPartition += message + "\n";
@@ -89,7 +89,8 @@ public class ConnectorIT {
 
         Iterator<ProducerRecord<Integer, String>> messagesIter = messages.iterator();
         while (messagesIter.hasNext()) {
-            producer.send(messagesIter.next()).get();
+            //producer.send(messagesIter.next()).get();
+            producer.send(messagesIter.next());
         }
 
         Thread.sleep(60_000L);
@@ -100,14 +101,14 @@ public class ConnectorIT {
 
         assertS3FileContents(
                 BUCKET_PREFIX + FILE_PREFIX + "last_chunk_index.test-topic-00000.txt",
-                FILE_PREFIX_WITH_DATE + "test-topic-00000-000000000000.index.json",
+                "33",
                 false,
                 UTF8
         );
 
         assertS3FileContents(
-                BUCKET_PREFIX + FILE_PREFIX_WITH_DATE + "test-topic-00000-000000000000.index.json",
-                "{\"chunks\":[{\"byte_length_uncompressed\":990,\"num_records\":33,\"byte_length\":137,\"byte_offset\":0,\"first_record_offset\":0}]}",
+                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_DATE + "test-topic-00000-000000000000.index.json",
+                "{\"chunks\":[{\"byte_length_uncompressed\":1749,\"num_records\":33,\"byte_length\":165,\"byte_offset\":0,\"first_record_offset\":0}]}",
                 false,
                 UTF8
         );
@@ -125,14 +126,14 @@ public class ConnectorIT {
 
         assertS3FileContents(
        BUCKET_PREFIX + FILE_PREFIX + "last_chunk_index.test-topic-00001.txt",
-    FILE_PREFIX_WITH_DATE + "test-topic-00001-000000000000.index.json",
+    "33",
    false,
             UTF8
         );
 
         assertS3FileContents(
-       BUCKET_PREFIX + FILE_PREFIX_WITH_DATE + "test-topic-00001-000000000000.index.json",
-    "{\"chunks\":[{\"byte_length_uncompressed\":990,\"num_records\":33,\"byte_length\":137,\"byte_offset\":0,\"first_record_offset\":0}]}",
+       BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_DATE + "test-topic-00001-000000000000.index.json",
+    "{\"chunks\":[{\"byte_length_uncompressed\":1749,\"num_records\":33,\"byte_length\":164,\"byte_offset\":0,\"first_record_offset\":0}]}",
    false,
             UTF8
         );
@@ -150,14 +151,14 @@ public class ConnectorIT {
 
         assertS3FileContents(
                 BUCKET_PREFIX + FILE_PREFIX + "last_chunk_index.test-topic-00002.txt",
-                FILE_PREFIX_WITH_DATE + "test-topic-00002-000000000000.index.json",
+                "34",
                 false,
                 UTF8
         );
 
         assertS3FileContents(
-                BUCKET_PREFIX + FILE_PREFIX_WITH_DATE + "test-topic-00002-000000000000.index.json",
-                "{\"chunks\":[{\"byte_length_uncompressed\":1020,\"num_records\":34,\"byte_length\":139,\"byte_offset\":0,\"first_record_offset\":0}]}",
+                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_DATE + "test-topic-00002-000000000000.index.json",
+                "{\"chunks\":[{\"byte_length_uncompressed\":1802,\"num_records\":34,\"byte_length\":166,\"byte_offset\":0,\"first_record_offset\":0}]}",
                 false,
                 UTF8
         );
@@ -181,7 +182,6 @@ public class ConnectorIT {
         } else {
             objectContent = IOUtils.toString(objectInputStream);
         }
-
         s3Object.close();
 
         assertThat(objectContent, is(content));
