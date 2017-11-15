@@ -84,9 +84,16 @@ public class TopicPartitionFiles {
                     log.info("No new records for topic partition key: {}", s3Partition);
                     continue;
                 }
+                //Close file and remove from map
                 writer.close();
+                tmpFiles.remove(s3Partition);
+
+                //upload to S3
                 String s3DataFileKey = s3.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), s3Partition);
+
+                //Add to returned keys
                 s3DataFileKeys.add(s3DataFileKey);
+
                 anyFileWereUploaded=true;
                 log.info("Successfully uploaded chunk for {}", s3Partition);
             }
@@ -94,8 +101,6 @@ public class TopicPartitionFiles {
                 s3.updateCursorFile(topicPartition, lastOffset + 1);
                 log.info("Successfully uploaded files topic partition. first offset: {} last offset: {}", firstOffset, lastOffset );
 
-                // Now reset files for that topic partition key
-                tmpFiles.clear();
                 firstOffset=null;
                 lastOffset=null;
             }
