@@ -11,7 +11,6 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.joda.time.Instant;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -19,7 +18,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -35,16 +33,20 @@ public class ConnectorIT {
 
     private static final String TEST_TOPIC_NAME = "test-topic";
     private static final String BUCKET_NAME = "fakes3";
-    private static final String DATE_FORMATTED = "2017/11/11";
+    private static final String FIRST_DATE_FORMATTED = "2017/11/11";
+    private static final String SECOND_DATE_FORMATTED = "2017/11/12";
     private static final String BUCKET_PREFIX = "connect-system-test/";
     private static final String FILE_PREFIX = "systest/";
-    private static final String FILE_PREFIX_WITH_DATE = FILE_PREFIX + DATE_FORMATTED + "/";
-    private static final String INDEXES_FILE_PREFIX_WITH_DATE = FILE_PREFIX +"indexes/" + DATE_FORMATTED + "/";
+    private static final String FILE_PREFIX_WITH_FIRST_DATE = FILE_PREFIX + FIRST_DATE_FORMATTED + "/";
+    private static final String INDEXES_FILE_PREFIX_WITH_FIRST_DATE = FILE_PREFIX +"indexes/" + FIRST_DATE_FORMATTED + "/";
+    private static final String FILE_PREFIX_WITH_SECOND_DATE = FILE_PREFIX + SECOND_DATE_FORMATTED + "/";
+    private static final String INDEXES_FILE_PREFIX_WITH_SECOND_DATE = FILE_PREFIX +"indexes/" + SECOND_DATE_FORMATTED + "/";
     private static final Charset UTF8 = Charset.forName("UTF-8");
 
     private static KafkaProducer<Integer, String> producer;
     private static List<ProducerRecord<Integer, String>> messages;
-    private static List<String> expectedMessagesInS3PerPartition = Arrays.asList("", "", "");
+    private static List<String> expectedMessagesInS3PerPartitionFirstDate = Arrays.asList("", "", "");
+    private static List<String> expectedMessagesInS3PerPartitionSecondDate = Arrays.asList("", "", "");
     private static AmazonS3Client s3Client;
 
     @BeforeClass
@@ -69,9 +71,23 @@ public class ConnectorIT {
             int partition = i % 3;
             String message = "{\"event_time\": \"2017-11-11 11:11:11\", \"counter\":" + i + "}";
 
-            String existingMessagesInS3PerPartition = expectedMessagesInS3PerPartition.get(partition);
+            String existingMessagesInS3PerPartition = expectedMessagesInS3PerPartitionFirstDate.get(partition);
             existingMessagesInS3PerPartition += message + "\n";
-            expectedMessagesInS3PerPartition.set(partition, existingMessagesInS3PerPartition);
+            expectedMessagesInS3PerPartitionFirstDate.set(partition, existingMessagesInS3PerPartition);
+
+            messages.add(
+                new ProducerRecord<>(TEST_TOPIC_NAME, partition, i, message)
+            );
+        }
+
+        //Create messages for another S3 partition
+        for (int i = 200; i < 300; i++) {
+            int partition = i % 3;
+            String message = "{\"event_time\": \"2017-11-12 11:11:11\", \"counter\":" + i + "}";
+
+            String existingMessagesInS3PerPartition = expectedMessagesInS3PerPartitionSecondDate.get(partition);
+            existingMessagesInS3PerPartition += message + "\n";
+            expectedMessagesInS3PerPartitionSecondDate.set(partition, existingMessagesInS3PerPartition);
 
             messages.add(
                 new ProducerRecord<>(TEST_TOPIC_NAME, partition, i, message)
@@ -95,27 +111,29 @@ public class ConnectorIT {
 
         Thread.sleep(60_000L);
 
+        //Check first date date
+
         /*
          * Asserting messages saved from partition 0
          */
 
         assertS3FileContents(
                 BUCKET_PREFIX + FILE_PREFIX + "last_chunk_index.test-topic-00000.txt",
-                "33",
+                "66",
                 false,
                 UTF8
         );
 
         assertS3FileContents(
-                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_DATE + "test-topic-00000-000000000000.index.json",
+                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_FIRST_DATE + "test-topic-00000-000000000000.index.json",
                 "{\"chunks\":[{\"byte_length_uncompressed\":1749,\"num_records\":33,\"byte_length\":165,\"byte_offset\":0,\"first_record_offset\":0}]}",
                 false,
                 UTF8
         );
 
         assertS3FileContents(
-                BUCKET_PREFIX + FILE_PREFIX_WITH_DATE + "test-topic-00000-000000000000.gz",
-                expectedMessagesInS3PerPartition.get(0),
+                BUCKET_PREFIX + FILE_PREFIX_WITH_FIRST_DATE + "test-topic-00000-000000000000.gz",
+                expectedMessagesInS3PerPartitionFirstDate.get(0),
                 true,
                 UTF8
         );
@@ -126,21 +144,21 @@ public class ConnectorIT {
 
         assertS3FileContents(
        BUCKET_PREFIX + FILE_PREFIX + "last_chunk_index.test-topic-00001.txt",
-    "33",
+    "66",
    false,
             UTF8
         );
 
         assertS3FileContents(
-       BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_DATE + "test-topic-00001-000000000000.index.json",
+       BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_FIRST_DATE + "test-topic-00001-000000000000.index.json",
     "{\"chunks\":[{\"byte_length_uncompressed\":1749,\"num_records\":33,\"byte_length\":164,\"byte_offset\":0,\"first_record_offset\":0}]}",
    false,
             UTF8
         );
 
         assertS3FileContents(
-                BUCKET_PREFIX + FILE_PREFIX_WITH_DATE + "test-topic-00001-000000000000.gz",
-                expectedMessagesInS3PerPartition.get(1),
+                BUCKET_PREFIX + FILE_PREFIX_WITH_FIRST_DATE + "test-topic-00001-000000000000.gz",
+                expectedMessagesInS3PerPartitionFirstDate.get(1),
                 true,
                 UTF8
         );
@@ -151,21 +169,77 @@ public class ConnectorIT {
 
         assertS3FileContents(
                 BUCKET_PREFIX + FILE_PREFIX + "last_chunk_index.test-topic-00002.txt",
-                "34",
+                "68",
                 false,
                 UTF8
         );
 
         assertS3FileContents(
-                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_DATE + "test-topic-00002-000000000000.index.json",
+                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_FIRST_DATE + "test-topic-00002-000000000000.index.json",
                 "{\"chunks\":[{\"byte_length_uncompressed\":1802,\"num_records\":34,\"byte_length\":166,\"byte_offset\":0,\"first_record_offset\":0}]}",
                 false,
                 UTF8
         );
 
         assertS3FileContents(
-                BUCKET_PREFIX + FILE_PREFIX_WITH_DATE + "test-topic-00002-000000000000.gz",
-                expectedMessagesInS3PerPartition.get(2),
+                BUCKET_PREFIX + FILE_PREFIX_WITH_FIRST_DATE + "test-topic-00002-000000000000.gz",
+                expectedMessagesInS3PerPartitionFirstDate.get(2),
+                true,
+                UTF8
+        );
+
+        //Check second date date
+
+        /*
+         * Asserting messages saved from partition 0
+         */
+
+        assertS3FileContents(
+                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_SECOND_DATE + "test-topic-00000-000000000033.index.json",
+                "{\"chunks\":[{\"byte_length_uncompressed\":1749,\"num_records\":33,\"byte_length\":166,\"byte_offset\":0,\"first_record_offset\":33}]}",
+                false,
+                UTF8
+        );
+
+        assertS3FileContents(
+                BUCKET_PREFIX + FILE_PREFIX_WITH_SECOND_DATE + "test-topic-00000-000000000033.gz",
+                expectedMessagesInS3PerPartitionSecondDate.get(0),
+                true,
+                UTF8
+        );
+
+        /*
+         * Asserting messages saved from partition 1
+         */
+
+        assertS3FileContents(
+                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_SECOND_DATE + "test-topic-00001-000000000033.index.json",
+                "{\"chunks\":[{\"byte_length_uncompressed\":1749,\"num_records\":33,\"byte_length\":164,\"byte_offset\":0,\"first_record_offset\":33}]}",
+                false,
+                UTF8
+        );
+
+        assertS3FileContents(
+                BUCKET_PREFIX + FILE_PREFIX_WITH_SECOND_DATE + "test-topic-00001-000000000033.gz",
+                expectedMessagesInS3PerPartitionSecondDate.get(1),
+                true,
+                UTF8
+        );
+
+        /*
+         * Asserting messages saved from partition 2
+         */
+
+        assertS3FileContents(
+                BUCKET_PREFIX + INDEXES_FILE_PREFIX_WITH_SECOND_DATE + "test-topic-00002-000000000034.index.json",
+                "{\"chunks\":[{\"byte_length_uncompressed\":1802,\"num_records\":34,\"byte_length\":167,\"byte_offset\":0,\"first_record_offset\":34}]}",
+                false,
+                UTF8
+        );
+
+        assertS3FileContents(
+                BUCKET_PREFIX + FILE_PREFIX_WITH_SECOND_DATE + "test-topic-00002-000000000034.gz",
+                expectedMessagesInS3PerPartitionSecondDate.get(2),
                 true,
                 UTF8
         );
