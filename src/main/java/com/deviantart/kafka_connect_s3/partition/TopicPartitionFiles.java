@@ -12,6 +12,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 /**
@@ -76,7 +77,8 @@ public class TopicPartitionFiles {
         boolean anyFileWereUploaded=false;
         ArrayList<String> s3DataFileKeys = new ArrayList<>();
         try {
-            for (Map.Entry<S3Partition, BlockGZIPFileWriter> entry : tmpFiles.entrySet()) {
+            for (Iterator<Map.Entry<S3Partition, BlockGZIPFileWriter>> it = tmpFiles.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<S3Partition, BlockGZIPFileWriter> entry = it.next();
                 BlockGZIPFileWriter writer = entry.getValue();
                 S3Partition s3Partition = entry.getKey();
                 if (writer.getNumRecords() == 0) {
@@ -86,7 +88,7 @@ public class TopicPartitionFiles {
                 }
                 //Close file and remove from map
                 writer.close();
-                tmpFiles.remove(s3Partition);
+                it.remove();
 
                 //upload to S3
                 String s3DataFileKey = s3.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), s3Partition);
