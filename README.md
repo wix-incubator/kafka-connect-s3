@@ -1,8 +1,22 @@
-# Kafka Connect S3 Sink
+# Kafka Connect Cloud Storage Sink Connector
 [![build passing](https://jenkins-public.personali.io/badge-icon?job=personali/kafka-connect-s3/master)](http://172.34.1.161:8080/view/Organization/job/personali/job/kafka-connect-s3/job/master/)
 
-This is a [kafka-connect](http://kafka.apache.org/documentation.html#connect) sink for Amazon S3, without any dependency on HDFS/Hadoop libraries or data formats.
+This is a [kafka-connect](http://kafka.apache.org/documentation.html#connect) sink for Cloud Storages such as S3/GCS, without any dependency on HDFS/Hadoop libraries or data formats.
 
+## Origin Fork
+This repository is a fork of [DeviantArt/kafka-connect-s3](https://github.com/DeviantArt/kafka-connect-s3)
+
+### Main differences from the origin repository
+
+- Support of a couple of Cloud Storage provides. (Currently GCS and S3)
+- Storage partitioning by a date field of the message
+- Customizable storage partitioning. e.g.
+
+    "custom.date.partition.format":"yyyy/MM/dd" will yield a partitions as gcs:[bucket_name] /2017/12/20/file
+
+    "custom.date.partition.format":"yyyy-MM-dd" will yield a partitions as gcs:[bucket_name] /2017-12-20/file
+- Supports plug able FlushAdditionalTask. This for example lets you sign the name of a new uploaded file, it's source topic and storage location in a database table so you can later on process that file.
+  An implementation of registering the new files in a management table on BigQuery and Redshift is available.
 ## Status
 
 This is pre-production code. Use at your own risk.
@@ -87,18 +101,11 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
   - Depending on your needs you can either limit to just the single block, or if you want to consume all records after that offset, you can consume from the offset right to the end of the file
  - The range request bytes can be decompressed as a GZIP file on their own with any GZIP compatible tool, provided you limit to whole block boundaries.
 
-## BZip2 format
-
-Works exactly the same way as the Block-GZIP output format, see above.
-
 ## Build and Run
 
-You should be able to build this with `mvn package`. Once the jar is generated in target folder include it in  `CLASSPATH` (ex: for Mac users,export `CLASSPATH=.:$CLASSPATH:/fullpath/to/kafka-connect-s3-jar` )
+You should be able to build this with `mvn package`. Once the jar is generated in target folder include it in  `CLASSPATH` (ex: for Mac users,export `CLASSPATH=.:$CLASSPATH:/fullpath/to/kafka-connect-cloud-storage.jar` )
 
 Run: `bin/connect-standalone.sh  example-connect-worker.properties example-connect-s3-sink.properties`(from the root directory of project, make sure you have kafka on the path, if not then give full path of kafka before `bin`)
-
-
-There is a script `local-run.sh` which you can inspect to see how to get it running. This script relies on having a local kafka instance setup as described in testing section below.
 
 ## Configuration
 
@@ -106,15 +113,31 @@ In addition to the [standard kafka-connect config options](http://kafka.apache.o
 
 | Config Key | Default | Notes |
 | ---------- | ------- | ----- |
-| s3.bucket | **REQUIRED** | The name of the bucket to write too. |
+| storage.class | com.personali.kafka.connect.cloud.storage.storage.GCSStorageWriter | The name of the Storage handler class.  GCSStorageWriter/S3StorageWriter |
+| storage.partition.class | **REQUIRED** | The name of the Storage partitioning class.  com.personali.kafka.connect.cloud.storage.partition.CustomDateFormatStoragePartition |
+| additional.flush.task.class | | The name of the flush additional task class. Currently available: com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalBigQueryRegisterTask , com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalRedshiftRegisterTask
+| storage.bucket | **REQUIRED** | The name of the bucket to write too. |
 | local.buffer.dir | **REQUIRED** | Directory to store buffered data in. Must exist. |
-| s3.prefix | `""` | Prefix added to all object keys stored in bucket to "namespace" them. |
+| [redshift/bigquery].table.name | | A table name for registering new uploaded files |
+| [redshift/bigquery].register.[topic_name]| `false` | Should we register files related to [topic_name] |
+| redshift.user | | Redshift user name when using FlushAdditionalRedshiftRegisterTask |
+| redshift.password | | Redshift password when using FlushAdditionalRedshiftRegisterTask |
+| redshift.connection.url | | Redshift connection url when using FlushAdditionalRedshiftRegisterTask |
+| storage.prefix | `""` | Prefix added to all object keys stored in bucket to "namespace" them. |
 | s3.endpoint | AWS defaults per region | Mostly useful for testing. |
 | s3.path_style | `false` | Force path-style access to bucket rather than subdomain. Mostly useful for tests. |
 | compressed_block_size | 67108864 | How much _uncompressed_ data to write to the file before we rol to a new block/chunk. See [Block-GZIP](#user-content-block-gzip-output-format) section above. |
-| compression.type | `gzip` | The compression algorithm, either `gzip` or `bzip2`. |
 
+## Credentials & Connectivity for cloud services
+### S3
 Note that we use the default AWS SDK credentials provider. [Refer to their docs](http://docs.aws.amazon.com/AWSSdkDocsJava/latest/DeveloperGuide/credentials.html#id1) for the options for configuring S3 credentials.
+
+### Redshift
+Redshift credentials is configured by redshift.user, redshift.password, redshift.connection.url config params.
+Redshift JDBC Driver should be available at the classpath.
+
+### GCS & Google BigQuery
+Credentials to google cloud services are supplied using [Google Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials)
 
 ## Testing
 

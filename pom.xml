@@ -2,14 +2,14 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.deviantart</groupId>
-  <artifactId>kafka-connect-s3</artifactId>
+  <groupId>com.personali</groupId>
+  <artifactId>kafka-connect-cloud-storage</artifactId>
   <version>0.0.3</version>
   <packaging>jar</packaging>
 
-  <name>kafka-connect-s3</name>
+  <name>kafka-connect-cloud-storage</name>
   <description>
-    A Kafka Connect S3 connector for reliably uploading batches of kafka logs to S3 without any Hadoop dependency.
+    A Kafka Connect Cloud Storage connector for reliably uploading batches of kafka logs to S3/GCS without any Hadoop dependency.
   </description>
 
     <repositories>
@@ -111,11 +111,6 @@
        <version>1.2.1.1001</version>
     </dependency>
     <dependency>
-      <groupId>com.google.inject</groupId>
-      <artifactId>guice</artifactId>
-      <version>4.1.0</version>
-    </dependency>
-    <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.12</version>
@@ -132,6 +127,16 @@
       <artifactId>aws-java-sdk</artifactId>
       <version>1.11.109</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-storage</artifactId>
+      <version>1.14.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-bigquery</artifactId>
+      <version>0.30.0-beta</version>
     </dependency>
   </dependencies>
 </project>
