@@ -1,6 +1,9 @@
 local-*
 # Created by https://www.gitignore.io/api/maven
 
+.idea
+*.iml
+
 ### Maven ###
 target/
 pom.xml.tag
@@ -11,3 +14,5 @@ release.properties
 dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
+/.idea/
+/kafka-connect-s3.iml

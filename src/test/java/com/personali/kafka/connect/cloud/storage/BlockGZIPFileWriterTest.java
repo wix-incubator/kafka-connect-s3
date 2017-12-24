@@ -1,4 +1,4 @@
-package com.deviantart.kafka_connect_s3;
+package com.personali.kafka.connect.cloud.storage;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
