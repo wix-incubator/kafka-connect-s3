@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.UUID;
 
 /**
@@ -17,20 +18,27 @@ public class FlushAdditionalBigQueryRegisterTask implements FlushAdditionalTask 
 
     private static final Logger log = LoggerFactory.getLogger(FlushAdditionalBigQueryRegisterTask.class);
 
-    private final static String INSERT_TEMPLATE =  "INSERT INTO `%s` (topic,file,status,create_time) VALUES ('%s','%s','UPLOADED',current_timestamp())";
+    private final static String BASE_INSERT_TEMPLATE =  "INSERT INTO `%s` (topic,file,status,create_time) VALUES ";
+    private final static String ROW_INSERT_TEMPLATE =  "('%s','%s','UPLOADED',current_timestamp())";
+    private StringJoiner statementJoiner;
 
     public void run(Map<TopicPartition,ArrayList<String>> storageDataFileKeys, Map<String,String> config) throws ConnectException{
         //Create BigQuery client
         BigQuery bigQuery = BigQueryOptions.getDefaultInstance().getService();
 
+        //Initialize insert statement
+        statementJoiner = new StringJoiner(",",String.format(BASE_INSERT_TEMPLATE,config.get("bigquery.table.name")),"");
+
         //For each file, if topic is configured to be registered, do so
         for (Map.Entry<TopicPartition,ArrayList<String>> entry : storageDataFileKeys.entrySet()){
             if (shouldRegisterTopicFiles(entry.getKey().topic(),config)) {
                 for (String storageDataFileKey : entry.getValue()) {
-                    registerDataFileToBigQuery(bigQuery,config.get("bigquery.table.name"), entry.getKey().topic(), storageDataFileKey);
+                    addFileToInsertStatement(entry.getKey().topic(), storageDataFileKey);
                 }
             }
         }
+
+        runQuery(bigQuery, statementJoiner.toString());
     }
 
     private boolean shouldRegisterTopicFiles(String topic, Map<String, String> config) {
@@ -42,11 +50,14 @@ public class FlushAdditionalBigQueryRegisterTask implements FlushAdditionalTask 
         }
     }
 
-    private void registerDataFileToBigQuery(BigQuery bigQuery, String tableName, String topic, String storageDataFileKey) {
-        String stmtStr = String.format(INSERT_TEMPLATE,tableName,topic,storageDataFileKey);
-        log.info("Running the following sql: {}",stmtStr);
+    private void addFileToInsertStatement(String topic, String storageDataFileKey) {
+        statementJoiner.add(String.format(ROW_INSERT_TEMPLATE,topic,storageDataFileKey));
+    }
+
+    private void runQuery(BigQuery bigQuery, String query){
+        log.info("Running the following sql: {}",query);
         QueryJobConfiguration queryConfig =
-                QueryJobConfiguration.newBuilder(stmtStr)
+                QueryJobConfiguration.newBuilder(query)
                         .setUseLegacySql(false)
                         .build();
 
@@ -66,12 +77,14 @@ public class FlushAdditionalBigQueryRegisterTask implements FlushAdditionalTask 
 
         // Check for errors
         if (queryJob == null) {
-          log.error("Failed to register storage data file to BigQuery: Job no longer exists");
-          throw new RuntimeException("Failed to register storage data file to BigQuery: Job no longer exists");
+            log.error("Failed to register storage data file to BigQuery: Job no longer exists");
+            throw new RuntimeException("Failed to register storage data file to BigQuery: Job no longer exists");
         } else if (queryJob.getStatus().getError() != null) {
-          log.error("Failed to register storage data file to BigQuery: {}",queryJob.getStatus().getError().toString());
-          throw new RuntimeException("Failed to register storage data file to BigQuery: " + queryJob.getStatus().getError().toString());
+            log.error("Failed to register storage data file to BigQuery: {}",queryJob.getStatus().getError().toString());
+            throw new RuntimeException("Failed to register storage data file to BigQuery: " + queryJob.getStatus().getError().toString());
         }
+
     }
+
 
 }
