@@ -1,0 +1,24 @@
+---
+version: '2'
+services:
+  connect:
+    image: your-repo/kafka-connect-cloud-storage:latest
+    hostname: connect
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: 'localhost:9092'
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: connect-to-gcs
+      CONNECT_CONFIG_STORAGE_TOPIC: connect-to-gcs-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: connect-to-gcs-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: connect-to-gcs-status
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_CONSUMER_MAX_POLL_RECORDS: 10
+      CONNECT_CONSUMER_AUTO_OFFSET_RESET: latest
+      CONNECT_TASK_SHUTDOWN_GRACEFUL_TIMEOUT_MS: 300000
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 30000

@@ -1,0 +1,19 @@
+{
+  "name": "cloud-storage-sink-connector",
+  "config": {
+    "connector.class": "com.personali.kafka.connect.cloud.storage.CloudStorageSinkConnector",
+    "tasks.max": "1",
+    "topics": "topic_name",
+    "storage.bucket": "your-bucket-name",
+    "storage.prefix.topic_name": "topic_name_prefix",
+    "local.buffer.dir": "/tmp",
+    "custom.date.partition.format":"yyyy/MM/dd",
+    "custom.date.field.format":"yyyy-MM-dd HH:mm:ss",
+    "custom.date.field":"event_time",
+    "storage.class": "com.personali.kafka.connect.cloud.storage.storage.GCSStorageWriter",
+    "storage.partition.class":"com.personali.kafka.connect.cloud.storage.partition.CustomDateFormatStoragePartition",
+    "additional.flush.task.class": "com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalBigQueryRegisterTask",
+    "bigquery.table.name": "project_id.dataset_name.event_files_upload_manager",
+    "bigquery.register.topic_name": "true"
+  }
+}

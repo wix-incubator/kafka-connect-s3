@@ -103,6 +103,29 @@ $ cat system-test-00000-000000000000.index.json | jq -M '.'
 
 ## Build and Run
 
+### Dockerized
+
+Add Additional resources to the additional_resources folder (Google credentials files, Redshift JDBC Driver...)
+
+Build Image:
+```mvn package -Dskip.docker=false -Ddocker.repo=your-repo/kafka-connect-cloud-storage```
+
+Edit the docker-compose-example.yml and setup at least you kafka endpoints.
+
+Start container:
+```docker-compose -f docker-compose-example.yml```
+
+Edit the connector-exapmle.json with your settings.
+
+Submit the rest api call to start the connector:
+```
+curl -H "Content-Type: application/json" \
+   --data "@connector-example.json" \
+   http://localhost:8083/connectors
+```
+
+### Not Dockerized
+
 You should be able to build this with `mvn package`. Once the jar is generated in target folder include it in  `CLASSPATH` (ex: for Mac users,export `CLASSPATH=.:$CLASSPATH:/fullpath/to/kafka-connect-cloud-storage.jar` )
 
 Run: `bin/connect-standalone.sh  example-connect-worker.properties example-connect-s3-sink.properties`(from the root directory of project, make sure you have kafka on the path, if not then give full path of kafka before `bin`)
