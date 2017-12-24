@@ -93,6 +93,9 @@ public class TopicPartitionFiles {
                 //upload to Storage
                 String storageDataFileKey = storageWriter.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), storagePartition);
 
+                //Remove files from local file system
+                writer.delete();
+
                 //Add to returned keys
                 storageDataFileKeys.add(storageDataFileKey);
 
