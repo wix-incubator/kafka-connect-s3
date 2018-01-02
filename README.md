@@ -141,11 +141,14 @@ In addition to the [standard kafka-connect config options](http://kafka.apache.o
 | additional.flush.task.class | | The name of the flush additional task class. Currently available: com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalBigQueryRegisterTask , com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalRedshiftRegisterTask
 | storage.bucket | **REQUIRED** | The name of the bucket to write too. |
 | local.buffer.dir | **REQUIRED** | Directory to store buffered data in. Must exist. |
-| [redshift/bigquery].table.name | | A table name for registering new uploaded files |
-| [redshift/bigquery].register.[topic_name]| `false` | Should we register files related to [topic_name] |
+| [redshift/bigquery/mysql].table.name | | A table name for registering new uploaded files |
+| [redshift/bigquery/mysql].register.[topic_name]| `false` | Should we register files related to [topic_name] |
 | redshift.user | | Redshift user name when using FlushAdditionalRedshiftRegisterTask |
 | redshift.password | | Redshift password when using FlushAdditionalRedshiftRegisterTask |
 | redshift.connection.url | | Redshift connection url when using FlushAdditionalRedshiftRegisterTask |
+| mysql.jdbc.url | | Mysql JDBC url when using FlushAdditionalMysqlRegisterTask |
+| mysql.user | | Mysql JDBC user when using FlushAdditionalMysqlRegisterTask |
+| mysql.password | | Mysql JDBC password when using FlushAdditionalMysqlRegisterTask |
 | storage.prefix | `""` | Prefix added to all object keys stored in bucket to "namespace" them. |
 | s3.endpoint | AWS defaults per region | Mostly useful for testing. |
 | s3.path_style | `false` | Force path-style access to bucket rather than subdomain. Mostly useful for tests. |
@@ -165,4 +168,4 @@ Credentials to google cloud services are supplied using [Google Application Defa
 ## Testing
 
 Integration tests can be ran using Docker.
-Simply run the `run-integration-tests.sh` script on a Mac/Linux system.
+Simply run the `run-integration-tests.sh` && `run-integration-tests-mysql.sh` scripts on a Mac/Linux system.

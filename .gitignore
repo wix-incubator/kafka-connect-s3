@@ -16,3 +16,5 @@ buildNumber.properties
 .mvn/timing.properties
 /.idea/
 /kafka-connect-s3.iml
+
+Session.vim

@@ -1,0 +1,24 @@
+{
+  "name": "s3-sink-connector",
+  "config": {
+    "connector.class": "com.personali.kafka.connect.cloud.storage.CloudStorageSinkConnector",
+    "tasks.max": "1",
+    "topics": "test-topic",
+    "s3.bucket": "connect-system-test",
+    "s3.prefix.test-topic": "systest",
+    "s3.endpoint": "http://fakes3:4569",
+    "s3.path_style": "true",
+    "local.buffer.dir": "/tmp",
+    "custom.date.partition.format":"yyyy/MM/dd",
+    "custom.date.field.format":"yyyy-MM-dd HH:mm:ss",
+    "custom.date.field":"event_time",
+    "s3.partition.class":"com.personali.kafka.connect.cloud.storage.partition.CustomDateFormatStoragePartition",
+    "additional.flush.task.class": "com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalMysqlRegisterTask",
+    "mysql.table.name": "management.management_table",
+    "mysql.register.test-topic": "true",
+    "mysql.jdbc.url": "jdbc:mysql://db:3306/management",
+    "mysql.user": "connect",
+    "mysql.password": "secret"
+
+  }
+}

@@ -178,5 +178,10 @@
       <artifactId>google-cloud-bigquery</artifactId>
       <version>0.30.0-beta</version>
     </dependency>
+    <dependency>
+        <groupId>mysql</groupId>
+        <artifactId>mysql-connector-java</artifactId>
+        <version>5.1.6</version>
+    </dependency>
   </dependencies>
 </project>
