@@ -12,6 +12,10 @@
     "custom.date.partition.format":"yyyy/MM/dd",
     "custom.date.field.format":"yyyy-MM-dd HH:mm:ss",
     "custom.date.field":"event_time",
-    "s3.partition.class":"com.personali.kafka.connect.cloud.storage.partition.CustomDateFormatStoragePartition"
+    "s3.partition.class":"com.personali.kafka.connect.cloud.storage.partition.CustomDateFormatStoragePartition",
+    "filter.class": "com.personali.kafka.connect.cloud.storage.filter.JsonByFieldMessageFilter",
+    "filter.out.topics": "test-topic",
+    "filter.out.field.name": "should_filter",
+    "filter.out.field.values": "yes"
   }
 }

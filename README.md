@@ -17,6 +17,7 @@ This repository is a fork of [DeviantArt/kafka-connect-s3](https://github.com/De
     "custom.date.partition.format":"yyyy-MM-dd" will yield a partitions as gcs:[bucket_name] /2017-12-20/file
 - Supports plug able FlushAdditionalTask. This for example lets you sign the name of a new uploaded file, it's source topic and storage location in a database table so you can later on process that file.
   An implementation of registering the new files in a management table on BigQuery and Redshift is available.
+- Supports plug able MessageFilter. The JsonByFieldMessageFilter implementation filter out messages by a field values.
 ## Status
 
 This is pre-production code. Use at your own risk.
@@ -153,6 +154,10 @@ In addition to the [standard kafka-connect config options](http://kafka.apache.o
 | s3.endpoint | AWS defaults per region | Mostly useful for testing. |
 | s3.path_style | `false` | Force path-style access to bucket rather than subdomain. Mostly useful for tests. |
 | compressed_block_size | 67108864 | How much _uncompressed_ data to write to the file before we rol to a new block/chunk. See [Block-GZIP](#user-content-block-gzip-output-format) section above. |
+| filter.class | | The name of the filter implementation class. Currently available: com.personali.kafka.connect.cloud.storage.filter.JsonByFieldMessageFilter |
+| filter.out.topics | | A comma separated list of topics to apply filter to |
+| filter.out.field.name | | A name of a Json message field name to filter by |
+| filter.out.field.values | | A comma separated list of values to filter by |
 
 ## Credentials & Connectivity for cloud services
 ### S3

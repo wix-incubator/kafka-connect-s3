@@ -14,6 +14,18 @@ import java.util.GregorianCalendar;
 public class JsonRecordParserTest {
 
     @Test
+    public void getStringField() throws Exception {
+        JsonRecordParser jrp = new JsonRecordParser();
+        String json = "{\"id\":\"1\", \"sub\":{}, \"event_time\":\"2016-01-01 10:00:00\"}";
+        String value = jrp.getStringField(json, "id");
+        assertThat(value, is("1"));
+
+        json = "{\"id\":1, \"sub\":{}, \"event_time\":\"2016-01-01 10:00:00\"}";
+        value = jrp.getStringField(json, "id");
+        assertThat(value, is("1"));
+    }
+
+    @Test
     public void testGetDateFieldSuccess() throws Exception {
         JsonRecordParser jrp = new JsonRecordParser();
         String json = "{\"id\":1, \"sub\":{}, \"event_time\":\"2016-01-01 10:00:00\"}";

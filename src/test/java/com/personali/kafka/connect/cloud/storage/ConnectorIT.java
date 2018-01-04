@@ -94,6 +94,15 @@ public class ConnectorIT {
             );
         }
 
+        //Create messages for be filtered
+        for (int i = 300; i < 303; i++) {
+            int partition = i % 3;
+            String message = "{\"event_time\": \"2017-11-12 11:11:11\", \"counter\":" + i + ", \"should_filter\":\"yes\" }";
+            messages.add(
+                    new ProducerRecord<>(TEST_TOPIC_NAME, partition, i, message)
+            );
+        }
+
         BasicAWSCredentials credentials = new BasicAWSCredentials("foo", "bar");
         s3Client = new AmazonS3Client(credentials);
         s3Client.setEndpoint(fakeS3Endpoint);

@@ -1,5 +1,6 @@
 package com.personali.kafka.connect.cloud.storage;
 
+import com.personali.kafka.connect.cloud.storage.filter.MessageFilter;
 import com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalTask;
 import com.personali.kafka.connect.cloud.storage.partition.StoragePartition;
 import com.personali.kafka.connect.cloud.storage.partition.TopicPartitionFiles;
@@ -25,6 +26,8 @@ public class CloudStorageSinkTask extends SinkTask {
   private Map<TopicPartition, TopicPartitionFiles> topicPartitionFilesMap;
 
   private StorageWriter storage;
+
+  private MessageFilter filter;
 
   public CloudStorageSinkTask() {
     topicPartitionFilesMap = new HashMap<>();
@@ -55,6 +58,22 @@ public class CloudStorageSinkTask extends SinkTask {
       throw new ConnectException("Couldn't instantiate class " +storageClassStr,e);
     }
 
+    String filterClassStr=null;
+    if (config.containsKey("filter.class")){
+      filterClassStr = config.get("filter.class");
+    }
+
+    if (filterClassStr != null) {
+      try {
+        filter = (MessageFilter) Class.forName(filterClassStr)
+                .getConstructor(Map.class)
+                .newInstance(config);
+      } catch (Exception e) {
+        e.printStackTrace();
+        throw new ConnectException("Couldn't instantiate class " + filterClassStr, e);
+      }
+    }
+
     //Make sure configured additional flush task class is available
     if (config.containsKey("additional.flush.task.class")){
       try {
@@ -79,6 +98,12 @@ public class CloudStorageSinkTask extends SinkTask {
   @Override
   public void put(Collection<SinkRecord> records) throws ConnectException {
     for (SinkRecord record : records) {
+
+      //If filter is configured and relevant for that record, continue to next record
+      if (filter != null && filter.shouldFilterOut(record)){
+        continue;
+      }
+
       try {
             String topic = record.topic();
             int partition = record.kafkaPartition();
