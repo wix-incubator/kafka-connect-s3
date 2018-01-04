@@ -18,7 +18,10 @@
     "mysql.register.test-topic": "true",
     "mysql.jdbc.url": "jdbc:mysql://db:3306/management",
     "mysql.user": "connect",
-    "mysql.password": "secret"
-
+    "mysql.password": "secret",
+    "filter.class": "com.personali.kafka.connect.cloud.storage.filter.JsonByFieldMessageFilter",
+    "filter.out.topics": "test-topic",
+    "filter.out.field.name": "should_filter",
+    "filter.out.field.values": "yes"
   }
 }
