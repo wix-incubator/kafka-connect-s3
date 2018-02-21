@@ -7,7 +7,7 @@ trap "docker-compose down" EXIT
 # Building connector JAR and starting test cluster
 mvn clean package
 docker-compose up -d
-sleep 10
+sleep 15
 
 # Creating topic for test messages
 docker-compose exec broker \
@@ -17,7 +17,7 @@ kafka-topics --zookeeper zookeeper:2181 \
 --partitions 3 \
 --replication-factor 1
 
-sleep 10
+sleep 20
 
 # Submitting JSON configuration
 curl -H "Content-Type: application/json" \
@@ -25,4 +25,4 @@ curl -H "Content-Type: application/json" \
 http://localhost:8083/connectors
 
 # Running integration tests
-mvn verify
+mvn failsafe:integration-test

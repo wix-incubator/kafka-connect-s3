@@ -100,7 +100,7 @@ public class TopicPartitionFiles {
                 storageDataFileKeys.add(storageDataFileKey);
 
                 anyFileWereUploaded=true;
-                log.info("Successfully uploaded chunk for {}", storagePartition);
+                log.info("Successfully uploaded chunk for {}, file name: {}", storagePartition, storageDataFileKey);
             }
             if (anyFileWereUploaded) {
                 storageWriter.updateCursorFile(topicPartition, lastOffset + 1);
