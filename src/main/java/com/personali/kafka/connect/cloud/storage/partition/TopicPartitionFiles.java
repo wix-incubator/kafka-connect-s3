@@ -90,8 +90,16 @@ public class TopicPartitionFiles {
                 writer.close();
                 it.remove();
 
-                //upload to Storage
-                String storageDataFileKey = storageWriter.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), storagePartition);
+                String storageDataFileKey;
+                try {
+                    //upload to Storage
+                    storageDataFileKey = storageWriter.putChunk(writer.getDataFilePath(), writer.getIndexFilePath(), storagePartition);
+                }
+                catch (Exception e){
+                    //Remove file from local filesystem anyway and rethrow exception
+                    writer.delete();
+                    throw e;
+                }
 
                 //Remove files from local file system
                 writer.delete();
@@ -110,9 +118,18 @@ public class TopicPartitionFiles {
                 lastOffset=null;
             }
         } catch (FileNotFoundException fnf) {
-            //TODO: delete any file that might have already uploaded to Storage
             throw new ConnectException("Failed to find local dir for temp files", fnf);
         } catch (IOException e) {
+            //Cleanup local files before throwing retriable exception
+            log.error("Removing the rest of the local files");
+            tmpFiles.forEach((k,v) -> {
+                try {
+                    v.close();
+                    v.delete();
+                } catch (IOException ioe) {
+                    log.error("Could not close and delete file",ioe);
+                }
+            });
             throw new RetriableException("Failed storage upload", e);
         }
         return storageDataFileKeys;
