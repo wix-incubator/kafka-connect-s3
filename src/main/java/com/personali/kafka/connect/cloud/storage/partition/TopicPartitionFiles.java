@@ -130,6 +130,7 @@ public class TopicPartitionFiles {
                     log.error("Could not close and delete file",ioe);
                 }
             });
+            tmpFiles.clear();
             throw new RetriableException("Failed storage upload", e);
         }
         return storageDataFileKeys;
