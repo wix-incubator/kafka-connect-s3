@@ -1,4 +1,4 @@
-FROM confluentinc/cp-kafka-connect:3.1.0
+FROM confluentinc/cp-kafka-connect:4.0.0
 MAINTAINER Or Sher <or.sher@personali.com>
 
 # Add the connector
