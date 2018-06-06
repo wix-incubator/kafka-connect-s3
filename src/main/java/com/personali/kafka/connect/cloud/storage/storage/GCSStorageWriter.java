@@ -36,11 +36,20 @@ public class GCSStorageWriter extends StorageWriter {
     // Read offset first since we'll delete the file after upload
     //long nextOffset = getNextOffsetFromIndexFileContents(new FileReader(localIndexFile));
 
+    //Retry uploading files 3 times with 5 second backoff between each retry before failing
+    retryUpload(1,3,5,localDataFile,dataFileKey,localIndexFile,idxFileKey);
+
+    //Return data file GCS key
+    return dataFileKey;
+  }
+
+  private void retryUpload(int time, int limit, int backoffSeconds, String localDataFile, String dataFileKey,
+                           String localIndexFile, String idxFileKey) throws IOException {
     try {
       log.debug("Uploading file {} to {} {}",localDataFile,dataFileKey,bucket);
 
       uploadLocalFile(new File(localDataFile).toPath(),
-                      BlobInfo.newBuilder(this.bucket, dataFileKey).build());
+              BlobInfo.newBuilder(this.bucket, dataFileKey).build());
 
       log.debug("Uploading file {} to {} {}",localIndexFile,idxFileKey,bucket);
 
@@ -48,13 +57,14 @@ public class GCSStorageWriter extends StorageWriter {
               BlobInfo.newBuilder(this.bucket, idxFileKey).build());
 
     } catch (Exception e) {
-      e.printStackTrace();
+      if (time <= limit){
+        retryUpload(time+1, limit, backoffSeconds,localDataFile,dataFileKey,localIndexFile,idxFileKey);
+      }
       throw new IOException("Failed to upload to GCS", e);
     }
 
-    //Return data file GCS key
-    return dataFileKey;
   }
+
 
   @Override
   public long fetchOffset(TopicPartition tp) throws IOException {

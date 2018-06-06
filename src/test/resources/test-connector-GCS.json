@@ -13,7 +13,7 @@
     "storage.class": "com.personali.kafka.connect.cloud.storage.storage.GCSStorageWriter",
     "storage.partition.class":"com.personali.kafka.connect.cloud.storage.partition.CustomDateFormatStoragePartition",
     "additional.flush.task.class": "com.personali.kafka.connect.cloud.storage.flush.FlushAdditionalBigQueryRegisterTask",
-    "bigquery.table.name": "remote-login-1121.personli.event_files_merge_manager",
+    "bigquery.table.name": "a.manager_table",
     "bigquery.register.test-topic": "true"
   }
 }
