@@ -57,9 +57,16 @@ public class GCSStorageWriter extends StorageWriter {
               BlobInfo.newBuilder(this.bucket, idxFileKey).build());
 
     } catch (Exception e) {
+      log.error("Failed uploading file.");
       if (time <= limit){
+        log.error("Retrying in {} seconds", backoffSeconds);
+        try {
+          Thread.sleep(backoffSeconds*1000);
+        } catch (InterruptedException e1) {
+        }
         retryUpload(time+1, limit, backoffSeconds,localDataFile,dataFileKey,localIndexFile,idxFileKey);
       }
+      log.error("Finished all retries. Failing.");
       throw new IOException("Failed to upload to GCS", e);
     }
 
