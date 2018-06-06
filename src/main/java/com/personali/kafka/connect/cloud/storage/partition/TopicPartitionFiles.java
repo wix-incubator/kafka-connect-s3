@@ -58,6 +58,7 @@ public class TopicPartitionFiles {
                 throw new ConnectException("Failed to resume TopicPartition from storage", ioe);
             }
         }
+        tmpFiles.clear();
     }
 
     public void putRecord(StoragePartition tpKey, long recordOffset, String recordValue) {
@@ -73,7 +74,7 @@ public class TopicPartitionFiles {
         lastOffset=recordOffset;
     }
 
-    public ArrayList flushFiles(){
+    public ArrayList flushFiles() throws IOException {
         boolean anyFileWereUploaded=false;
         ArrayList<String> storageDataFileKeys = new ArrayList<>();
         try {
@@ -119,19 +120,6 @@ public class TopicPartitionFiles {
             }
         } catch (FileNotFoundException fnf) {
             throw new ConnectException("Failed to find local dir for temp files", fnf);
-        } catch (IOException e) {
-            //Cleanup local files before throwing retriable exception
-            log.error("Removing the rest of the local files");
-            tmpFiles.forEach((k,v) -> {
-                try {
-                    v.close();
-                    v.delete();
-                } catch (IOException ioe) {
-                    log.error("Could not close and delete file",ioe);
-                }
-            });
-            tmpFiles.clear();
-            throw new RetriableException("Failed storage upload", e);
         }
         return storageDataFileKeys;
     }

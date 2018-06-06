@@ -17,6 +17,8 @@ import java.util.zip.GZIPOutputStream;
 
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * BlockGZIPFileWriter accumulates newline delimited UTF-8 records and writes them to an
@@ -36,6 +38,8 @@ import org.json.simple.JSONObject;
  * with any regular GZIP decoding library or program.
  */
 public class BlockGZIPFileWriter {
+  private static final Logger log = LoggerFactory.getLogger(BlockGZIPFileWriter.class);
+
   private String filenameBase;
   private String path;
   private GZIPOutputStream gzipStream;
@@ -195,6 +199,7 @@ public class BlockGZIPFileWriter {
   private void deleteIfExists(String path) throws IOException {
     File f = new File(path);
     if (f.exists() && !f.isDirectory()) {
+      log.info("Deleting local file {}",path);
       f.delete();
     }
   }

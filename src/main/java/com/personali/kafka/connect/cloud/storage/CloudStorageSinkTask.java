@@ -8,6 +8,7 @@ import com.personali.kafka.connect.cloud.storage.storage.StorageWriter;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTask;
 import org.slf4j.Logger;
@@ -145,9 +146,17 @@ public class CloudStorageSinkTask extends SinkTask {
     // https://twitter.com/mr_paul_banks/status/702493772983177218
 
     Map<TopicPartition,ArrayList<String>> s3DataFileKeys = new HashMap<>();
-    // Instead iterate over the writers we do have and get the offsets directly from them.
-    for (Map.Entry<TopicPartition, TopicPartitionFiles> entry : topicPartitionFilesMap.entrySet()) {
-      s3DataFileKeys.put(entry.getKey(),entry.getValue().flushFiles());
+    try{
+      // Instead iterate over the writers we do have and get the offsets directly from them.
+      for (Map.Entry<TopicPartition, TopicPartitionFiles> entry : topicPartitionFilesMap.entrySet()) {
+        s3DataFileKeys.put(entry.getKey(),entry.getValue().flushFiles());
+      }
+    }
+    catch (IOException e) {
+        //Cleanup local files before throwing retriable exception
+        log.error("Removing the rest of the local files");
+        topicPartitionFilesMap.forEach((k,v) -> v.revokeFiles());
+        throw new RetriableException("Failed storage upload", e);
     }
 
     //Case there is another Task to run after uploading files to the storage
@@ -169,8 +178,11 @@ public class CloudStorageSinkTask extends SinkTask {
 
   @Override
   public void close(Collection<TopicPartition> partitions) throws ConnectException {
+    log.info(partitions.toString());
     for (TopicPartition tp : partitions) {
+      log.info("Checking topic {} partition {}" ,tp.topic(),tp.partition());
       if (topicPartitionFilesMap.get(tp) != null) {
+        log.info("Revoking {} {}" ,tp.topic(),tp.partition());
         topicPartitionFilesMap.get(tp).revokeFiles();
         topicPartitionFilesMap.remove(tp);
       }
