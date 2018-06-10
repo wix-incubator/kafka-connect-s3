@@ -66,8 +66,10 @@ public class GCSStorageWriter extends StorageWriter {
         }
         retryUpload(time+1, limit, backoffSeconds,localDataFile,dataFileKey,localIndexFile,idxFileKey);
       }
-      log.error("Finished all retries. Failing.");
-      throw new IOException("Failed to upload to GCS", e);
+      else {
+        log.error("Finished all retries. Failing.");
+        throw new IOException("Failed to upload to GCS", e);
+      }
     }
 
   }
