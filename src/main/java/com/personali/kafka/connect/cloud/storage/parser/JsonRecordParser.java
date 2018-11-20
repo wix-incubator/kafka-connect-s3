@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.JsonToken;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.StringTokenizer;
 
 /**
  * Created by or on 28/12/16.
@@ -14,21 +15,46 @@ import java.util.Date;
 public class JsonRecordParser {
 
 
-    public Date getDateField(String json, String dateField, String dateFormat) throws Exception {
-        SimpleDateFormat df = new SimpleDateFormat(dateFormat);
+	public  Date getDateField(String json, String dateField, String dateFormat, String delimiter) throws Exception {
+    	SimpleDateFormat df = new SimpleDateFormat(dateFormat);
         JsonFactory f = new JsonFactory();
-        Date date = null;
-
         JsonParser jParser = f.createParser(json.getBytes());
-        while (jParser.nextToken() != JsonToken.END_OBJECT) {
-            if (jParser.getCurrentToken().isStructStart()) {
-               jParser.nextToken();
-            }
-            String fieldname = jParser.getCurrentName();
-            if (dateField.equals(fieldname)) {
+        Date date = null;
+        
+        
+        StringTokenizer searchFields = new StringTokenizer(dateField,delimiter);
+        
+        
+        
+        String value = null;
+        
+        String currentSearchField = searchFields.nextToken();
+        
+        while (jParser.nextToken() != JsonToken.END_OBJECT ) {
+        	
+            while (jParser.getCurrentToken().isStructStart() || 
+            		jParser.getCurrentToken() == JsonToken.START_ARRAY || 
+            		jParser.getCurrentToken() == JsonToken.END_ARRAY) {
                 jParser.nextToken();
-                date = df.parse(jParser.getText());
-                break;
+            }
+            String fieldName = jParser.getCurrentName();
+
+            if (fieldName.equals(currentSearchField)) {
+                jParser.nextToken();
+                if (jParser.getCurrentToken() == JsonToken.START_ARRAY) {
+                	jParser.nextToken();
+                }
+                else {
+	                value = jParser.getText();
+                }
+                
+                if (searchFields.hasMoreTokens() == false) {
+                	break;
+                }
+                else {
+                	currentSearchField = searchFields.nextToken();
+                }
+                	
             }
             else{
                 jParser.nextToken();
@@ -36,12 +62,21 @@ public class JsonRecordParser {
             }
         }
         jParser.close();
-
-        if ( null == date) {
-            throw new Exception("Date Field not found");
+        if(searchFields.hasMoreTokens()) {
+        	throw new Exception("Date Field not found");
+        }
+        else {
+        	try {
+        		date = df.parse(value);
+        	}
+        	catch(Exception e) {
+        		throw new Exception("Unable to Parse this value "+value+" into date format provided");
+        	}
         }
         return date;
+
     }
+
 
     /**
      * Get a specific field string value from a valid json string representation
