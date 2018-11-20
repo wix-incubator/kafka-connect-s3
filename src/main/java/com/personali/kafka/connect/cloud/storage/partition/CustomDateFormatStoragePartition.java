@@ -17,14 +17,17 @@ public class CustomDateFormatStoragePartition extends StoragePartition {
     private String dataDirectory;
     private String indexDirectory;
 
+    
+
     public CustomDateFormatStoragePartition(SinkRecord record, Map<String,String> props){
         super(record,props);
         String dateFormat = props.get("custom.date.partition.format");
         String dateField = props.get("custom.date.field");
         String dateFieldFormat = props.get("custom.date.field.format");
+        String delimiter = props.getOrDefault("custom.date.field.delimiter",".");
         SimpleDateFormat df = new SimpleDateFormat(dateFormat);
         try {
-            Date partitionDate = new JsonRecordParser().getDateField((String) record.value(), dateField, dateFieldFormat);
+            Date partitionDate = new JsonRecordParser().getDateField((String) record.value(), dateField, dateFieldFormat,delimiter);
             dataDirectory =  String.format("%s/", df.format(partitionDate));
             indexDirectory = String.format("indexes/%s/", df.format(partitionDate));
         }
