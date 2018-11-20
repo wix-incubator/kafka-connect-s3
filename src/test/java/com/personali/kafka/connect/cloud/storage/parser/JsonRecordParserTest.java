@@ -17,12 +17,52 @@ public class JsonRecordParserTest {
     public void getStringField() throws Exception {
         JsonRecordParser jrp = new JsonRecordParser();
         String json = "{\"id\":\"1\", \"sub\":{}, \"event_time\":\"2016-01-01 10:00:00\"}";
-        String value = jrp.getStringField(json, "id");
+        String value = jrp.getStringField(json, "id",".");
         assertThat(value, is("1"));
 
         json = "{\"id\":1, \"sub\":{}, \"event_time\":\"2016-01-01 10:00:00\"}";
-        value = jrp.getStringField(json, "id");
+        value = jrp.getStringField(json, "id",".");
         assertThat(value, is("1"));
+        
+        json = "{\n" + 
+        		"	\"timestamp1\": \"2018-11-15T12:19:11.987500\",\n" + 
+        		"	\"key1\": {\n" + 
+        		"		\"batch\": \"BATCH2457\",\n" + 
+        		"		\"offset\": 2457\n" + 
+        		"	},\n" + 
+        		"	\"DATABASE\": \"moengage\",\n" + 
+        		"	\"key2\": {\n" + 
+        		"		\"partition\": 7\n" + 
+        		"	},\n" + 
+        		"	\"EVENTS\": [{\n" + 
+        		"		\"action\": \"event0\",\n" + 
+        		"		\"timestamp20\": \"2018-11-16T12:19:11\",\n" + 
+        		"		\"attributes\": {\n" + 
+        		"			\"timestamp20\": \"2018-11-17T12:19:11\"\n" + 
+        		"		}\n" + 
+        		"	}, {\n" + 
+        		"		\"action\": \"event1\",\n" + 
+        		"		\"timestamp21\": \"2018-11-18T12:19:11\",\n" + 
+        		"		\"attributes\": {\n" + 
+        		"			\"timestamp21\": \"2018-11-19T12:19:11\"\n" + 
+        		"		}\n" + 
+        		"	}, {\n" + 
+        		"		\"action\": \"event2\",\n" + 
+        		"		\"timestamp22\": \"2018-11-20T12:19:11\",\n" + 
+        		"		\"attributes\": {\n" + 
+        		"			\"timestamp22\": \"2018-11-21T12:19:11\"\n" + 
+        		"		}\n" + 
+        		"	}]\n" + 
+        		"}";
+        
+        value = jrp.getStringField(json, "key1:batch", ":");
+        assertThat(value, is("BATCH2457"));
+        
+        value = jrp.getStringField(json, "DATABASE", ";");
+        assertThat(value, is("moengage"));
+        
+        
+        
     }
 
     

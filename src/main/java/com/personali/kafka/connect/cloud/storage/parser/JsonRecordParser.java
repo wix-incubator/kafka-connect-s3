@@ -1,6 +1,7 @@
 package com.personali.kafka.connect.cloud.storage.parser;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 
@@ -83,21 +84,45 @@ public class JsonRecordParser {
      * @param json String representation of a valid json
      * @param stringFieldName The name of the field to extract it's value from the json
      * @return  The value of the field inside the json, null if not found.
+     * @throws JsonParseException 
      * @throws IOException
      */
-    public String getStringField(String json, String stringFieldName) throws IOException {
+    public String getStringField(String json, String stringFieldName, String delimiter) throws JsonParseException, IOException {
+    	
         JsonFactory f = new JsonFactory();
         JsonParser jParser = f.createParser(json.getBytes());
+        
+        StringTokenizer searchFields = new StringTokenizer(stringFieldName,delimiter);
+        
         String value = null;
-        while (jParser.nextToken() != JsonToken.END_OBJECT) {
-            if (jParser.getCurrentToken().isStructStart()) {
+        
+        String currentSearchField = searchFields.nextToken();
+        
+        while (jParser.nextToken() != JsonToken.END_OBJECT ) {
+        	
+            while (jParser.getCurrentToken().isStructStart() || 
+            		jParser.getCurrentToken() == JsonToken.START_ARRAY || 
+            		jParser.getCurrentToken() == JsonToken.END_ARRAY) {
                 jParser.nextToken();
             }
             String fieldName = jParser.getCurrentName();
-            if (stringFieldName.equals(fieldName)) {
+
+            if (fieldName.equals(currentSearchField)) {
                 jParser.nextToken();
-                value = jParser.getText();
-                break;
+                if (jParser.getCurrentToken() == JsonToken.START_ARRAY) {
+                	jParser.nextToken();
+                }
+                else {
+	                value = jParser.getText();
+                }
+                
+                if (searchFields.hasMoreTokens() == false) {
+                	break;
+                }
+                else {
+                	currentSearchField = searchFields.nextToken();
+                }
+                	
             }
             else{
                 jParser.nextToken();
@@ -105,6 +130,10 @@ public class JsonRecordParser {
             }
         }
         jParser.close();
+        if(searchFields.hasMoreTokens()) {
+        	value = null;
+        }
+       
         return value;
 
     }
