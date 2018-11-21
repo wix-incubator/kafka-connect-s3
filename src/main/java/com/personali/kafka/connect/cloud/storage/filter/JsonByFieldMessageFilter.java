@@ -19,7 +19,8 @@ public class JsonByFieldMessageFilter extends MessageFilter {
     private static final Logger log = LoggerFactory.getLogger(JsonByFieldMessageFilter.class);
 
     private List<String> filterTopics;
-    private String filterFieldName;
+    private String filterFieldName = ".";
+    private String filterFieldDelimiter;
     private List<String> filterFieldValues;
     private JsonRecordParser jsonParser = new JsonRecordParser();
 
@@ -30,6 +31,7 @@ public class JsonByFieldMessageFilter extends MessageFilter {
             filterTopics = Arrays.stream(topics.split(",")).map(String::trim).collect(Collectors.toList());
         }
         filterFieldName = props.get("filter.out.field.name");
+        filterFieldDelimiter = props.getOrDefault("filter.out.field.delimiter", ".");
         String fieldValues = props.get("filter.out.field.values");
         if (fieldValues != null){
             filterFieldValues = Arrays.stream(fieldValues.split(",")).map(String::trim).collect(Collectors.toList());
@@ -44,6 +46,7 @@ public class JsonByFieldMessageFilter extends MessageFilter {
      *
      * @param record A Kafka SinkRecord to check if it should be filtered out of not
      * @return true if record should be filtered out, false otherwise
+     * @throws Exception 
      */
     @Override
     public boolean shouldFilterOut(SinkRecord record) {
@@ -52,7 +55,7 @@ public class JsonByFieldMessageFilter extends MessageFilter {
             if (filterTopics.contains(record.topic())) {
 
                 //Get the field value from the json
-                String fieldValue = jsonParser.getStringField((String) record.value(), this.filterFieldName);
+                String fieldValue = jsonParser.getStringField((String) record.value(), this.filterFieldName, this.filterFieldDelimiter);
 
                 //If the field exists and the value should be filtered return true
                 if (fieldValue != null && filterFieldValues.contains(fieldValue)) {
